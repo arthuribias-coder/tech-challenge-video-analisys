@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMenuBar, QMenu, QStatusBar, QProgressBar,
     QFileDialog, QMessageBox, QLabel, QSpinBox,
-    QPushButton, QToolBar
+    QPushButton, QToolBar, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QAction, QIcon, QFontDatabase
@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
         
         # Espaçador
         spacer = QWidget()
-        spacer.setSizePolicy(toolbar.sizePolicy().MinimumExpanding, toolbar.sizePolicy().Preferred)
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
         
         # Botão Sobre
