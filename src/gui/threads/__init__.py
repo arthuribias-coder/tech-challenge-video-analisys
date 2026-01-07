@@ -2,6 +2,6 @@
 Threads auxiliares
 """
 
-__all__ = ['ProcessorThread']
+__all__ = ['ProcessorThreadQt']
 
-from .processor_thread import ProcessorThread
+from .processor_thread_qt import ProcessorThreadQt

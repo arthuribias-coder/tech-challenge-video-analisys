@@ -2,12 +2,7 @@
 
 ## Descrição
 
-Aplicação de análise de vídeo que utiliza técnicas de **reconhecimento facial**, **análise de expressões emocionais**, **detecção de atividades** e **identificação de anomalias comportamentais**.
-
-O sistema oferece **duas interfaces**:
-
-- **CLI**: Processamento via linha de comando com player OpenCV integrado
-- **GUI**: Interface gráfica moderna com visualização em tempo real, gráficos e controles interativos
+Aplicação **GUI profissional** para análise de vídeo utilizando **PyQt6**, com reconhecimento facial, análise de expressões emocionais, detecção de atividades e identificação de anomalias comportamentais.
 
 ## Funcionalidades
 
@@ -18,14 +13,13 @@ O sistema oferece **duas interfaces**:
 | **Detecção de Atividades** | Identifica ações (caminhando, sentado, gesticulando, etc.) |
 | **Detecção de Anomalias** | Identifica comportamentos atípicos (movimentos bruscos, mudanças emocionais súbitas) |
 | **Geração de Relatório** | Cria resumo automático com estatísticas e insights |
-| **Interface GUI** | Visualização interativa com gráficos, estatísticas e controles de reprodução |
+| **Interface GUI Profissional** | PyQt6 com visualização em tempo real, gráficos interativos e controles avançados |
 
 ## Arquitetura
 
 ```
 TC-4/
-├── main.py                 # CLI - Linha de comando
-├── gui_app.py              # GUI - Interface gráfica
+├── gui_app.py              # Entry point - Interface gráfica
 ├── requirements.txt        # Dependências do projeto
 ├── .env.example            # Exemplo de configuração
 ├── src/
@@ -37,14 +31,14 @@ TC-4/
 │   ├── anomaly_detector.py # Detector de anomalias
 │   ├── visualizer.py       # Desenho de anotações nos frames
 │   ├── report_generator.py # Gerador de relatórios
-│   └── gui/                # Interface gráfica
-│       ├── main_window.py  # Janela principal
+│   └── gui/                # Interface PyQt6
+│       ├── main_window_qt.py  # Janela principal Qt
 │       ├── widgets/        # Componentes da UI
-│       │   ├── video_player.py
-│       │   ├── stats_panel.py
-│       │   └── charts_panel.py
+│       │   ├── video_player_qt.py
+│       │   ├── stats_panel_qt.py
+│       │   └── charts_panel_qt.py
 │       └── threads/        # Processamento em background
-│           └── processor_thread.py
+│           └── processor_thread_qt.py
 ├── input/                  # Vídeos de entrada
 ├── output/                 # Vídeos processados
 ├── reports/                # Relatórios gerados
@@ -76,102 +70,86 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Colocar o vídeo na pasta `input/`
+### 4. (Linux apenas) Dependências do sistema (opcionais)
+
+A maioria das distribuições Linux modernas já possui as bibliotecas necessárias. Caso encontre erros, instale:
 
 ```bash
-cp seu_video.mp4 input/
+# Oracle Linux / Red Hat / Fedora
+sudo dnf install libxcb libxkbcommon fontconfig
+
+# Ubuntu / Debian
+sudo apt install libxcb-xinerama0 libxkbcommon-x11-0
 ```
 
 ## Uso
 
-### Opção 1: Interface Gráfica (Recomendado)
+### Iniciar Aplicação
 
 ```bash
 # Ativar ambiente virtual
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate     # Windows
 
-# Iniciar GUI
+# Executar GUI
 python gui_app.py
 ```
 
-**Funcionalidades da GUI:**
+### Fluxo de Trabalho
 
-- **Player de Vídeo**: Controles completos (play, pause, seek, tempo real)
-- **Painel de Estatísticas**: Contadores ao vivo de faces, emoções, atividades e anomalias
-- **Gráficos Interativos**:
-  - Distribuição de emoções (barras)
-  - Distribuição de atividades (barras)
-  - Timeline de eventos
-  - Análise de anomalias (pizza)
-- **Controles**: Processar, pausar, parar, salvar vídeo
-- **Barra de Status**: Progresso em tempo real, FPS, tempo estimado
-- **Menu**: Abrir vídeos, exportar relatórios, ajustes
+1. **Abrir Vídeo**: Menu Arquivo → Abrir Vídeo (ou Ctrl+O)
+2. **Processar**: Menu Processar → Iniciar (Player exibe progresso em tempo real)
+3. **Visualizar Resultados**: Gráficos e estatísticas atualizados automaticamente
+4. **Exportar**: 
+   - Vídeo: Arquivo → Salvar Vídeo (Ctrl+S)
+   - Relatório: Arquivo → Exportar Relatório (Ctrl+E)
 
-**Requisitos de Sistema:**
+### Funcionalidades da GUI
 
-- Python 3.12+ com Tkinter instalado (`python3.12-tkinter` no Linux)
-- Ambiente gráfico (X11/Wayland no Linux, GUI nativa no Windows/Mac)
+**Player de Vídeo:**
+- Reprodução com controles (play, pause, seek)
+- Visualização frame-a-frame
+- Indicador de tempo atual/total
 
-### Opção 2: Linha de Comando (CLI)
+**Painel de Estatísticas:**
+- Total de faces detectadas
+- Emoção dominante com percentual
+- Atividade dominante com percentual
+- Contagem de anomalias
+- Botão "Ver Detalhes Completos"
 
-```bash
-# Ativar ambiente virtual
-source .venv/bin/activate
+**Gráficos Interativos:**
+- **Emoções**: Distribuição em gráfico de barras
+- **Atividades**: Frequência de atividades detectadas
+- **Anomalias**: Distribuição por tipo (pizza)
 
-# Processar vídeo padrão (definido em .env ou config.py)
-python main.py
+**Controles:**
+- Processar, Pausar, Parar
+- Barra de progresso visual
+- Indicador de FPS em tempo real
 
-# Processar vídeo específico
-python main.py input/seu_video.mp4
+### Atalhos de Teclado
 
-# Processar e reproduzir automaticamente (abre player OpenCV)
-python main.py input/video.mp4 --show
-
-# Ajustar intervalo de frames (mais rápido, menos preciso)
-python main.py input/video.mp4 --skip 3
-
-# Definir arquivo de saída customizado
-python main.py input/video.mp4 --output meu_resultado.mp4
-
-# Ver todas as opções disponíveis
-python main.py --help
-```
-
-### Controles do Player (CLI --show e GUI)
-
-| Tecla | Ação |
+| Atalho | Ação |
 | --- | --- |
-| **Q** ou **ESC** | Sair do player |
-| **Espaço** | Pausar/Continuar |
-| **← / A** | Voltar 10 segundos |
-| **→ / D** | Avançar 10 segundos |
-
-### Saída no Console (CLI)
-
-O sistema exibe em tempo real:
-
-- Carregamento dos modelos de IA
-- Informações do vídeo de entrada
-- Barra de progresso detalhada (%, FPS, ETA)
-- Estatísticas completas da análise:
-  - Total de faces detectadas
-  - Top 5 emoções com gráfico ASCII
-  - Top 5 atividades com gráfico ASCII
-  - Anomalias detectadas
-- Informações do arquivo gerado
+| `Ctrl+O` | Abrir vídeo |
+| `Ctrl+S` | Salvar vídeo processado |
+| `Ctrl+E` | Exportar relatório |
+| `Ctrl+Q` | Sair da aplicação |
+| `Espaço` | Play/Pause no player |
 
 ## Tecnologias Utilizadas
 
 | Categoria | Tecnologia |
 | --- | --- |
-| **Interface** | CustomTkinter (GUI), Tkinter (GUI base) |
+| **Interface** | PyQt6 (GUI profissional), PyQt6-Charts |
 | **Visão Computacional** | OpenCV, MediaPipe |
 | **Reconhecimento Facial** | OpenCV Haar Cascades |
 | **Análise de Emoções** | FER (Facial Expression Recognition) |
 | **Detecção de Atividades** | YOLO11-pose (Ultralytics) |
 | **Deep Learning** | PyTorch |
-| **Visualização** | Matplotlib (gráficos integrados) |
-| **Threading** | Python threading (processamento assíncrono) |
+| **Visualização** | Matplotlib + Qt Backend (FigureCanvas) |
+| **Threading** | QThread com pyqtSignal (processamento assíncrono) |
 
 ## Vídeo Processado
 
@@ -210,10 +188,11 @@ O vídeo de saída contém:
 
 ## Notas Importantes
 
-- ✅ Projeto convertido de notebooks para aplicação CLI simples
-- 🚀 Performance otimizada com `frame_skip` configurável
+- ✅ Aplicação profissional com GUI PyQt6
+- 🚀 Processamento assíncrono com QThread (não bloqueia interface)
 - 📹 Suporta qualquer formato de vídeo compatível com OpenCV
 - 🎯 YOLO11-pose oferece melhor precisão que YOLOv8
+- 🎨 Interface com tema dark e gráficos interativos
 
 ## Autor
 

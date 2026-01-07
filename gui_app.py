@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Tech Challenge - Fase 4: Entry Point GUI
-Inicia a aplicação gráfica.
+Inicia a aplicação gráfica com PyQt6.
 
 Uso:
     python gui_app.py
@@ -13,20 +13,27 @@ from pathlib import Path
 # Adiciona src ao path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.gui import VideoAnalyzerGUI
+from PyQt6.QtWidgets import QApplication
+from src.gui import MainWindow
 
 
 def main():
     """Função principal."""
     print("=" * 70)
     print(" " * 15 + "TECH CHALLENGE - FASE 4")
-    print(" " * 10 + "Análise de Vídeo com IA - GUI")
+    print(" " * 10 + "Análise de Vídeo com IA - GUI PyQt6")
     print("=" * 70)
     print("\nIniciando interface gráfica...\n")
     
     try:
-        app = VideoAnalyzerGUI()
-        app.mainloop()
+        app = QApplication(sys.argv)
+        app.setStyle('Fusion')  # Estilo moderno
+        
+        window = MainWindow()
+        window.show()
+        
+        sys.exit(app.exec())
+        
     except KeyboardInterrupt:
         print("\n\nAplicação encerrada pelo usuário")
         sys.exit(0)
