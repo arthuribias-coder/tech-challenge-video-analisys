@@ -21,17 +21,17 @@ ENV/
 output/
 reports/
 *.mp4
-!IADT*/
+!input/*.mp4
 
-# Jupyter
+# Notebooks (projeto convertido para CLI)
+*.ipynb
 .ipynb_checkpoints/
-*.ipynb_checkpoints
 
-# Model weights (downloaded)
+# Model weights (downloaded automatically)
 *.pt
 *.pth
 *.onnx
-models/weights/
+models/
 
 # OS files
 .DS_Store

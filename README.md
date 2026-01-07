@@ -21,19 +21,21 @@ O sistema processa vídeos em **tempo real**, exibindo bounding boxes, labels e 
 ```
 TC-4/
 ├── main.py                 # Ponto de entrada principal
-├── run.py                  # Script de execução rápida
 ├── requirements.txt        # Dependências do projeto
 ├── .env.example            # Exemplo de configuração
 ├── src/
+│   ├── __init__.py         # Exporta módulos principais
 │   ├── config.py           # Configurações centralizadas
 │   ├── face_detector.py    # Detector de rostos
 │   ├── emotion_analyzer.py # Analisador de emoções
-│   ├── activity_detector.py# Detector de atividades
+│   ├── activity_detector.py# Detector de atividades (YOLO11-pose)
 │   ├── anomaly_detector.py # Detector de anomalias
-│   ├── report_generator.py # Gerador de relatórios
-│   └── video_analyzer.py   # Integrador principal
+│   ├── visualizer.py       # Desenho de anotações nos frames
+│   └── report_generator.py # Gerador de relatórios
+├── input/                  # Vídeos de entrada
 ├── output/                 # Vídeos processados
-└── reports/                # Relatórios gerados
+├── reports/                # Relatórios gerados
+└── models/                 # Modelos YOLO baixados
 ```
 
 ## Instalação
@@ -45,10 +47,10 @@ git clone <repo-url>
 cd TC-4
 ```
 
-### 2. Criar ambiente virtual
+### 2. Criar ambiente virtual (Python 3.12+)
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # ou
 .venv\Scripts\activate     # Windows
@@ -57,136 +59,117 @@ source .venv/bin/activate  # Linux/Mac
 ### 3. Instalar dependências
 
 ```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Configurar variáveis de ambiente (opcional)
+### 4. Colocar o vídeo na pasta `input/`
 
 ```bash
-cp .env.example .env
-# Edite .env com sua chave da OpenAI (para resumos com LLM)
+cp seu_video.mp4 input/
 ```
 
 ## Uso
 
-### Execução Básica
+### Processamento de Vídeo
 
 ```bash
-python run.py
+# Ativar ambiente virtual (se ainda não ativou)
+source .venv/bin/activate
+
+# Processar vídeo padrão (definido em .env ou config.py)
+python main.py
+
+# Processar vídeo específico
+python main.py input/seu_video.mp4
+
+# Processar e reproduzir automaticamente (abre player OpenCV)
+python main.py input/video.mp4 --show
+
+# Ajustar intervalo de frames (mais rápido, menos preciso)
+python main.py input/video.mp4 --skip 3
+
+# Definir arquivo de saída customizado
+python main.py input/video.mp4 --output meu_resultado.mp4
+
+# Ver todas as opções disponíveis
+python main.py --help
 ```
 
-### Execução com Opções
+### Controles do Player (--show)
 
-```bash
-# Sem visualização (apenas processamento)
-python main.py --no-display
+| Tecla | Ação |
+| --- | --- |
+| **Q** ou **ESC** | Sair do player |
+| **Espaço** | Pausar/Continuar |
+| **← / A** | Voltar 10 segundos |
+| **→ / D** | Avançar 10 segundos |
 
-# Salvando vídeo processado
-python main.py --save
+### Saída no Console
 
-# Vídeo específico
-python main.py --video caminho/para/video.mp4
+O sistema exibe em tempo real:
 
-# Ajustar frame skip (performance)
-python main.py --skip 3  # Processa 1 a cada 3 frames
-```
-
-### Controles Durante Execução
-
-- **Q**: Encerrar análise
-- O vídeo é exibido em tempo real com todas as anotações
+- 🔧 Carregamento dos modelos de IA
+- 📹 Informações do vídeo de entrada
+- 🎬 Barra de progresso detalhada (%, FPS, ETA)
+- 📊 Estatísticas completas da análise:
+  - Total de faces detectadas
+  - Top 5 emoções com gráfico ASCII
+  - Top 5 atividades com gráfico ASCII
+  - Anomalias detectadas
+- 💾 Informações do arquivo gerado
 
 ## Tecnologias Utilizadas
 
 | Categoria | Tecnologia |
-|-----------|------------|
+| --- | --- |
 | **Visão Computacional** | OpenCV, MediaPipe |
-| **Reconhecimento Facial** | OpenCV DNN, Haar Cascades |
+| **Reconhecimento Facial** | OpenCV Haar Cascades |
 | **Análise de Emoções** | FER (Facial Expression Recognition) |
-| **Detecção de Pose** | MediaPipe Pose |
-| **Deep Learning** | PyTorch, TensorFlow (backend) |
-| **LLM (opcional)** | LangChain + OpenAI GPT-4 |
+| **Detecção de Atividades** | YOLO11-pose (Ultralytics) |
+| **Deep Learning** | PyTorch |
 
-## Saída do Sistema
+## Vídeo Processado
 
-### Visualização em Tempo Real
+O vídeo de saída contém:
 
-- Bounding boxes coloridos para rostos (verde)
-- Labels de emoções (amarelo)
-- Esqueleto de pose para atividades (laranja)
-- Alertas de anomalias (vermelho)
-- HUD com estatísticas no canto
-
-### Relatório Gerado
-
-```markdown
-# Relatório de Análise de Vídeo
-## Tech Challenge - Fase 4
-
-**Arquivo**: video.mp4
-**Duração**: 120.0 segundos
-**Frames Analisados**: 3600
-
-## Resumo Executivo
-[Resumo gerado automaticamente]
-
-## Estatísticas Gerais
-- Total de Rostos: 450
-- Pessoas Únicas: 5
-- Anomalias: 3
-
-## Análise de Emoções
-| Emoção | Frequência |
-|--------|------------|
-| Neutro | 280 |
-| Feliz  | 120 |
-...
-
-## Anomalias Detectadas
-1. Movimento brusco em 00:45
-2. Mudança emocional súbita em 01:20
-...
-```
+- ✅ Bounding boxes verdes para rostos detectados
+- 😊 Labels de emoções com confiança (ciano)
+- 🏃 Detecção de atividades das pessoas (laranja)
+- ⚠️ Alertas visuais para anomalias (vermelho)
 
 ## Estrutura dos Módulos
 
-### FaceDetector
+### FaceDetector (`src/face_detector.py`)
 
-- Métodos: `haar`, `dnn`, `mediapipe`
+- Método padrão: Haar Cascades
 - Rastreamento de IDs entre frames
-- Configurável para diferentes níveis de precisão/performance
+- Suporte para MediaPipe e DNN
 
-### EmotionAnalyzer
+### EmotionAnalyzer (`src/emotion_analyzer.py`)
 
-- Suporte a FER e DeepFace
+- Baseado em FER (Facial Expression Recognition)
 - Suavização temporal para reduzir ruído
-- 7 emoções básicas: feliz, triste, raiva, medo, surpresa, nojo, neutro
+- 7 emoções: feliz, triste, raiva, medo, surpresa, nojo, neutro
 
-### ActivityDetector
+### ActivityDetector (`src/activity_detector.py`)
 
-- Detecção de pose com MediaPipe
-- Classificação de atividades por análise de keypoints
-- Cálculo de velocidade e padrões de movimento
+- Usa YOLO11-pose para detecção de pessoas
+- Análise de keypoints (17 pontos COCO)
+- Detecta 9 atividades: em pé, sentado, caminhando, correndo, acenando, apontando, dançando, agachado, braços levantados
 
-### AnomalyDetector
+### AnomalyDetector (`src/anomaly_detector.py`)
 
 - Análise estatística de comportamento
-- Detecção de outliers em movimento e emoção
+- Detecção de: movimentos bruscos, mudanças emocionais súbitas, atividades incomuns
 - Histórico temporal para baseline adaptativo
 
-## Observações
+## Notas Importantes
 
-- O projeto foi desenvolvido para análise de vídeos pré-gravados
-- A performance depende do hardware (GPU acelera significativamente)
-- Recomenda-se `frame_skip >= 2` para vídeos longos
-- A geração de resumo com LLM requer chave da OpenAI
-
-## Requisitos do Sistema
-
-- Python 3.9+
-- 4GB+ RAM
-- Webcam ou arquivo de vídeo
-- GPU (opcional, melhora performance)
+- ✅ Projeto convertido de notebooks para aplicação CLI simples
+- 🚀 Performance otimizada com `frame_skip` configurável
+- 📹 Suporta qualquer formato de vídeo compatível com OpenCV
+- 🎯 YOLO11-pose oferece melhor precisão que YOLOv8
 
 ## Autor
 
