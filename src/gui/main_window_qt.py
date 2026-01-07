@@ -6,10 +6,10 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMenuBar, QMenu, QStatusBar, QProgressBar,
     QFileDialog, QMessageBox, QLabel, QSpinBox,
-    QPushButton
+    QPushButton, QToolBar
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QAction, QIcon, QFontDatabase
 from pathlib import Path
 
 from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt
@@ -24,6 +24,18 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Tech Challenge - Fase 4: Análise de Vídeo com IA")
         self.resize(1400, 900)
+        
+        # Configurar suporte a emojis (Qt 6.9+)
+        try:
+            # Tenta usar fontes do sistema que suportam emojis
+            emoji_fonts = ["Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Twitter Color Emoji"]
+            for font in emoji_fonts:
+                if font in QFontDatabase.families():
+                    QFontDatabase.addApplicationEmojiFontFamily(font)
+                    break
+        except AttributeError:
+            # Fallback para Qt < 6.9
+            pass
         
         # Estado
         self.video_path = None
@@ -82,7 +94,7 @@ class MainWindow(QMainWindow):
         """)
         
         self._setup_ui()
-        self._setup_menu()
+        self._setup_toolbar()
         self._setup_statusbar()
     
     def _setup_ui(self):
@@ -110,58 +122,89 @@ class MainWindow(QMainWindow):
         self.charts_panel = ChartsPanelQt()
         main_layout.addWidget(self.charts_panel, stretch=3)
     
-    def _setup_menu(self):
-        """Cria menu."""
-        menubar = self.menuBar()
+    def _setup_toolbar(self):
+        """Cria toolbar com botões."""
+        toolbar = QToolBar("Controles Principais")
+        toolbar.setIconSize(QSize(32, 32))
+        toolbar.setMovable(False)
+        toolbar.setStyleSheet("""
+            QToolBar {
+                background-color: #2d2d2d;
+                border-bottom: 2px solid #3d3d3d;
+                spacing: 5px;
+                padding: 5px;
+            }
+            QToolButton {
+                background-color: #3d3d3d;
+                color: #e0e0e0;
+                border: 1px solid #555;
+                border-radius: 5px;
+                padding: 8px;
+                font-size: 14px;
+                min-width: 120px;
+            }
+            QToolButton:hover {
+                background-color: #4d4d4d;
+                border: 1px solid #777;
+            }
+            QToolButton:pressed {
+                background-color: #2d2d2d;
+            }
+            QToolButton:disabled {
+                background-color: #2a2a2a;
+                color: #666;
+            }
+        """)
+        self.addToolBar(toolbar)
         
-        # Arquivo
-        file_menu = menubar.addMenu("&Arquivo")
-        
-        open_action = QAction("[+] &Abrir Vídeo", self)
+        # Botão Abrir Vídeo
+        open_action = QAction("📂 Abrir Vídeo", self)
         open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self._open_video)
-        file_menu.addAction(open_action)
+        toolbar.addAction(open_action)
         
-        save_action = QAction("[*] &Salvar Vídeo", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.triggered.connect(self._save_video)
-        file_menu.addAction(save_action)
+        toolbar.addSeparator()
         
-        export_action = QAction("[#] &Exportar Relatório", self)
-        export_action.setShortcut("Ctrl+E")
-        export_action.triggered.connect(self._export_report)
-        file_menu.addAction(export_action)
-        
-        file_menu.addSeparator()
-        
-        exit_action = QAction("Sai&r", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        
-        # Processar
-        process_menu = menubar.addMenu("&Processar")
-        
-        self.start_action = QAction("[>] &Iniciar", self)
+        # Botão Processar
+        self.start_action = QAction("▶️ Processar", self)
         self.start_action.triggered.connect(self._start_processing)
-        process_menu.addAction(self.start_action)
+        toolbar.addAction(self.start_action)
         
-        self.pause_action = QAction("[||] &Pausar", self)
+        # Botão Pausar
+        self.pause_action = QAction("⏸️ Pausar", self)
         self.pause_action.triggered.connect(self._pause_processing)
         self.pause_action.setEnabled(False)
-        process_menu.addAction(self.pause_action)
+        toolbar.addAction(self.pause_action)
         
-        self.stop_action = QAction("[■] Pa&rar", self)
+        # Botão Parar
+        self.stop_action = QAction("⏹️ Parar", self)
         self.stop_action.triggered.connect(self._stop_processing)
         self.stop_action.setEnabled(False)
-        process_menu.addAction(self.stop_action)
+        toolbar.addAction(self.stop_action)
         
-        # Ajuda
-        help_menu = menubar.addMenu("A&juda")
+        toolbar.addSeparator()
         
-        about_action = QAction("[?] &Sobre", self)
+        # Botão Salvar
+        save_action = QAction("💾 Salvar Vídeo", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self._save_video)
+        toolbar.addAction(save_action)
+        
+        # Botão Exportar
+        export_action = QAction("📊 Exportar Relatório", self)
+        export_action.setShortcut("Ctrl+E")
+        export_action.triggered.connect(self._export_report)
+        toolbar.addAction(export_action)
+        
+        # Espaçador
+        spacer = QWidget()
+        spacer.setSizePolicy(toolbar.sizePolicy().MinimumExpanding, toolbar.sizePolicy().Preferred)
+        toolbar.addWidget(spacer)
+        
+        # Botão Sobre
+        about_action = QAction("ℹ️ Sobre", self)
         about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
+        toolbar.addAction(about_action)
     
     def _setup_statusbar(self):
         """Cria barra de status."""
@@ -241,11 +284,11 @@ class MainWindow(QMainWindow):
         if self.processor_thread:
             self.processor_thread.toggle_pause()
             if self.processor_thread.is_paused:
-                self.status_label.setText("Processamento pausado")
-                self.pause_action.setText("[>] &Retomar")
+                self.status_label.setText("⏸️ Processamento pausado")
+                self.pause_action.setText("▶️ Retomar")
             else:
-                self.status_label.setText("Processando vídeo...")
-                self.pause_action.setText("[||] &Pausar")
+                self.status_label.setText("⚙️ Processando vídeo...")
+                self.pause_action.setText("⏸️ Pausar")
     
     def _stop_processing(self):
         """Para processamento."""

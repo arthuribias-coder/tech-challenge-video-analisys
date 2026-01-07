@@ -35,7 +35,7 @@ class VideoPlayerQt(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         # Video display
-        self.video_label = QLabel("Carregue um vídeo para começar")
+        self.video_label = QLabel("🎥 Carregue um vídeo para começar")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("""
             QLabel {
@@ -53,7 +53,7 @@ class VideoPlayerQt(QWidget):
         controls_layout.setSpacing(10)
         
         # Botão Play/Pause
-        self.play_btn = QPushButton("[>] Play")
+        self.play_btn = QPushButton("▶️ Play")
         self.play_btn.clicked.connect(self._toggle_play)
         self.play_btn.setEnabled(False)
         controls_layout.addWidget(self.play_btn)
@@ -113,7 +113,7 @@ class VideoPlayerQt(QWidget):
             return
         
         self.is_playing = True
-        self.play_btn.setText("[||] Pausar")
+        self.play_btn.setText("⏸️ Pausar")
         
         # Calcula intervalo do timer (ms)
         interval = int(1000 / self.fps) if self.fps > 0 else 33
@@ -122,7 +122,7 @@ class VideoPlayerQt(QWidget):
     def pause(self):
         """Pausa reprodução."""
         self.is_playing = False
-        self.play_btn.setText("[>] Play")
+        self.play_btn.setText("▶️ Play")
         self.timer.stop()
     
     def stop(self):
