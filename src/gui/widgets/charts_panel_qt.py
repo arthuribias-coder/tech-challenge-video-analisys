@@ -51,13 +51,13 @@ class ChartsPanelQt(QWidget):
         
         # Cria abas
         self.emotion_canvas = self._create_chart_canvas()
-        self.tabs.addTab(self.emotion_canvas, "😊 Emoções")
+        self.tabs.addTab(self.emotion_canvas, "[:)] Emoções")
         
         self.activity_canvas = self._create_chart_canvas()
-        self.tabs.addTab(self.activity_canvas, "🏃 Atividades")
+        self.tabs.addTab(self.activity_canvas, "[>] Atividades")
         
         self.anomaly_canvas = self._create_chart_canvas()
-        self.tabs.addTab(self.anomaly_canvas, "⚠️ Anomalias")
+        self.tabs.addTab(self.anomaly_canvas, "[!] Anomalias")
         
         layout.addWidget(self.tabs)
         
@@ -163,7 +163,7 @@ class ChartsPanelQt(QWidget):
         # Estilo
         ax.set_facecolor('#1e1e1e')
         ax.set_xlabel('Ocorrências', color='#e0e0e0')
-        ax.set_title('😊 Distribuição de Emoções', color='#e0e0e0', fontsize=12, pad=10)
+        ax.set_title('[:)] Distribuição de Emoções', color='#e0e0e0', fontsize=12, pad=10)
         ax.tick_params(colors='#e0e0e0')
         
         for spine in ax.spines.values():
@@ -203,7 +203,7 @@ class ChartsPanelQt(QWidget):
         # Estilo
         ax.set_facecolor('#1e1e1e')
         ax.set_xlabel('Ocorrências', color='#e0e0e0')
-        ax.set_title('🏃 Distribuição de Atividades', color='#e0e0e0', fontsize=12, pad=10)
+        ax.set_title('[>] Distribuição de Atividades', color='#e0e0e0', fontsize=12, pad=10)
         ax.tick_params(colors='#e0e0e0')
         
         for spine in ax.spines.values():
@@ -263,7 +263,7 @@ class ChartsPanelQt(QWidget):
         
         # Estilo
         ax.set_facecolor('#1e1e1e')
-        ax.set_title('⚠️ Distribuição de Anomalias', color='#e0e0e0', fontsize=12, pad=10)
+        ax.set_title('[!] Distribuição de Anomalias', color='#e0e0e0', fontsize=12, pad=10)
         
         for autotext in autotexts:
             autotext.set_color('#1e1e1e')
