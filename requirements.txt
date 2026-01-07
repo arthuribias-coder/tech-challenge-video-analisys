@@ -12,6 +12,10 @@ fer>=22.5.0
 # Detecção de Atividades (YOLO11-pose)
 ultralytics>=8.3.0
 
+# Interface Gráfica
+customtkinter>=5.2.0
+matplotlib>=3.8.0
+
 # Utilitários
 python-dotenv>=1.0.0
 

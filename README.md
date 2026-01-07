@@ -4,7 +4,10 @@
 
 Aplicação de análise de vídeo que utiliza técnicas de **reconhecimento facial**, **análise de expressões emocionais**, **detecção de atividades** e **identificação de anomalias comportamentais**.
 
-O sistema processa vídeos em **tempo real**, exibindo bounding boxes, labels e informações relevantes diretamente no vídeo, similar a sistemas de detecção de objetos como YOLO.
+O sistema oferece **duas interfaces**:
+
+- **CLI**: Processamento via linha de comando com player OpenCV integrado
+- **GUI**: Interface gráfica moderna com visualização em tempo real, gráficos e controles interativos
 
 ## Funcionalidades
 
@@ -15,12 +18,14 @@ O sistema processa vídeos em **tempo real**, exibindo bounding boxes, labels e 
 | **Detecção de Atividades** | Identifica ações (caminhando, sentado, gesticulando, etc.) |
 | **Detecção de Anomalias** | Identifica comportamentos atípicos (movimentos bruscos, mudanças emocionais súbitas) |
 | **Geração de Relatório** | Cria resumo automático com estatísticas e insights |
+| **Interface GUI** | Visualização interativa com gráficos, estatísticas e controles de reprodução |
 
 ## Arquitetura
 
 ```
 TC-4/
-├── main.py                 # Ponto de entrada principal
+├── main.py                 # CLI - Linha de comando
+├── gui_app.py              # GUI - Interface gráfica
 ├── requirements.txt        # Dependências do projeto
 ├── .env.example            # Exemplo de configuração
 ├── src/
@@ -31,7 +36,15 @@ TC-4/
 │   ├── activity_detector.py# Detector de atividades (YOLO11-pose)
 │   ├── anomaly_detector.py # Detector de anomalias
 │   ├── visualizer.py       # Desenho de anotações nos frames
-│   └── report_generator.py # Gerador de relatórios
+│   ├── report_generator.py # Gerador de relatórios
+│   └── gui/                # Interface gráfica
+│       ├── main_window.py  # Janela principal
+│       ├── widgets/        # Componentes da UI
+│       │   ├── video_player.py
+│       │   ├── stats_panel.py
+│       │   └── charts_panel.py
+│       └── threads/        # Processamento em background
+│           └── processor_thread.py
 ├── input/                  # Vídeos de entrada
 ├── output/                 # Vídeos processados
 ├── reports/                # Relatórios gerados
@@ -71,10 +84,38 @@ cp seu_video.mp4 input/
 
 ## Uso
 
-### Processamento de Vídeo
+### Opção 1: Interface Gráfica (Recomendado)
 
 ```bash
-# Ativar ambiente virtual (se ainda não ativou)
+# Ativar ambiente virtual
+source .venv/bin/activate
+
+# Iniciar GUI
+python gui_app.py
+```
+
+**Funcionalidades da GUI:**
+
+- **Player de Vídeo**: Controles completos (play, pause, seek, tempo real)
+- **Painel de Estatísticas**: Contadores ao vivo de faces, emoções, atividades e anomalias
+- **Gráficos Interativos**:
+  - Distribuição de emoções (barras)
+  - Distribuição de atividades (barras)
+  - Timeline de eventos
+  - Análise de anomalias (pizza)
+- **Controles**: Processar, pausar, parar, salvar vídeo
+- **Barra de Status**: Progresso em tempo real, FPS, tempo estimado
+- **Menu**: Abrir vídeos, exportar relatórios, ajustes
+
+**Requisitos de Sistema:**
+
+- Python 3.12+ com Tkinter instalado (`python3.12-tkinter` no Linux)
+- Ambiente gráfico (X11/Wayland no Linux, GUI nativa no Windows/Mac)
+
+### Opção 2: Linha de Comando (CLI)
+
+```bash
+# Ativar ambiente virtual
 source .venv/bin/activate
 
 # Processar vídeo padrão (definido em .env ou config.py)
@@ -96,7 +137,7 @@ python main.py input/video.mp4 --output meu_resultado.mp4
 python main.py --help
 ```
 
-### Controles do Player (--show)
+### Controles do Player (CLI --show e GUI)
 
 | Tecla | Ação |
 | --- | --- |
@@ -105,29 +146,32 @@ python main.py --help
 | **← / A** | Voltar 10 segundos |
 | **→ / D** | Avançar 10 segundos |
 
-### Saída no Console
+### Saída no Console (CLI)
 
 O sistema exibe em tempo real:
 
-- 🔧 Carregamento dos modelos de IA
-- 📹 Informações do vídeo de entrada
-- 🎬 Barra de progresso detalhada (%, FPS, ETA)
-- 📊 Estatísticas completas da análise:
+- Carregamento dos modelos de IA
+- Informações do vídeo de entrada
+- Barra de progresso detalhada (%, FPS, ETA)
+- Estatísticas completas da análise:
   - Total de faces detectadas
   - Top 5 emoções com gráfico ASCII
   - Top 5 atividades com gráfico ASCII
   - Anomalias detectadas
-- 💾 Informações do arquivo gerado
+- Informações do arquivo gerado
 
 ## Tecnologias Utilizadas
 
 | Categoria | Tecnologia |
 | --- | --- |
+| **Interface** | CustomTkinter (GUI), Tkinter (GUI base) |
 | **Visão Computacional** | OpenCV, MediaPipe |
 | **Reconhecimento Facial** | OpenCV Haar Cascades |
 | **Análise de Emoções** | FER (Facial Expression Recognition) |
 | **Detecção de Atividades** | YOLO11-pose (Ultralytics) |
 | **Deep Learning** | PyTorch |
+| **Visualização** | Matplotlib (gráficos integrados) |
+| **Threading** | Python threading (processamento assíncrono) |
 
 ## Vídeo Processado
 
