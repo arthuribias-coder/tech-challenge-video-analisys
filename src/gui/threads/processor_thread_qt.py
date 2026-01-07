@@ -111,16 +111,13 @@ class ProcessorThreadQt(QThread):
                         emotions = []
                         for face in faces:
                             x, y, w, h = face.bbox
-                            face_img = frame[y:y+h, x:x+w]
                             
-                            if face_img.size > 0:
-                                emotion = emotion_analyzer.analyze(face_img)
-                                emotions.append(emotion)
-                                if emotion:
-                                    emotion_name = emotion.emotion_pt if hasattr(emotion, 'emotion_pt') else str(emotion)
-                                    stats['emotions'][emotion_name] = stats['emotions'].get(emotion_name, 0) + 1
-                            else:
-                                emotions.append(None)
+                            # EmotionAnalyzer.analyze() precisa de frame completo, bbox e face_id
+                            emotion = emotion_analyzer.analyze(frame, face.bbox, face.face_id)
+                            emotions.append(emotion)
+                            if emotion:
+                                emotion_name = emotion.emotion_pt if hasattr(emotion, 'emotion_pt') else str(emotion)
+                                stats['emotions'][emotion_name] = stats['emotions'].get(emotion_name, 0) + 1
                         
                         # Detecta atividades
                         activities = activity_detector.detect(frame)
@@ -128,10 +125,11 @@ class ProcessorThreadQt(QThread):
                             activity_name = activity.activity_pt if hasattr(activity, 'activity_pt') else str(activity)
                             stats['activities'][activity_name] = stats['activities'].get(activity_name, 0) + 1
                         
-                        # Detecta anomalias
-                        anomalies = anomaly_detector.detect(frame, faces, stats)
+                        # Detecta anomalias usando o método update()
+                        anomalies = anomaly_detector.update(frame_idx, faces, emotions, activities)
                         for anomaly in anomalies:
-                            anomaly_name = anomaly.type if hasattr(anomaly, 'type') else str(anomaly)
+                            # AnomalyEvent tem anomaly_type (enum), não .type
+                            anomaly_name = anomaly.anomaly_type.value if hasattr(anomaly, 'anomaly_type') else str(anomaly)
                             stats['anomalies'][anomaly_name] = stats['anomalies'].get(anomaly_name, 0) + 1
                         
                         # Visualiza
