@@ -100,18 +100,20 @@ python gui_app.py
 1. **Abrir Vídeo**: Menu Arquivo → Abrir Vídeo (ou Ctrl+O)
 2. **Processar**: Menu Processar → Iniciar (Player exibe progresso em tempo real)
 3. **Visualizar Resultados**: Gráficos e estatísticas atualizados automaticamente
-4. **Exportar**: 
+4. **Exportar**:
    - Vídeo: Arquivo → Salvar Vídeo (Ctrl+S)
    - Relatório: Arquivo → Exportar Relatório (Ctrl+E)
 
 ### Funcionalidades da GUI
 
 **Player de Vídeo:**
+
 - Reprodução com controles (play, pause, seek)
 - Visualização frame-a-frame
 - Indicador de tempo atual/total
 
 **Painel de Estatísticas:**
+
 - Total de faces detectadas
 - Emoção dominante com percentual
 - Atividade dominante com percentual
@@ -119,11 +121,13 @@ python gui_app.py
 - Botão "Ver Detalhes Completos"
 
 **Gráficos Interativos:**
+
 - **Emoções**: Distribuição em gráfico de barras
 - **Atividades**: Frequência de atividades detectadas
 - **Anomalias**: Distribuição por tipo (pizza)
 
 **Controles:**
+
 - Processar, Pausar, Parar
 - Barra de progresso visual
 - Indicador de FPS em tempo real

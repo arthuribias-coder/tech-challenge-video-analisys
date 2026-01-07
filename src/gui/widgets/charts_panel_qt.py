@@ -51,13 +51,13 @@ class ChartsPanelQt(QWidget):
         
         # Cria abas
         self.emotion_canvas = self._create_chart_canvas()
-        self.tabs.addTab(self.emotion_canvas, "[:)] Emoções")
+        self.tabs.addTab(self.emotion_canvas, "Emoções")
         
         self.activity_canvas = self._create_chart_canvas()
-        self.tabs.addTab(self.activity_canvas, "[>] Atividades")
+        self.tabs.addTab(self.activity_canvas, "Atividades")
         
         self.anomaly_canvas = self._create_chart_canvas()
-        self.tabs.addTab(self.anomaly_canvas, "[!] Anomalias")
+        self.tabs.addTab(self.anomaly_canvas, "Anomalias")
         
         layout.addWidget(self.tabs)
         

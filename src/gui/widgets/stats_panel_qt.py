@@ -32,7 +32,7 @@ class StatsPanelQt(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         
         # Título
-        title = QLabel("[=] ESTATÍSTICAS")
+        title = QLabel("ESTATÍSTICAS")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("""
             QLabel {
@@ -46,7 +46,7 @@ class StatsPanelQt(QWidget):
         layout.addWidget(title)
         
         # Faces
-        faces_group = self._create_stat_group("[#] Faces Detectadas")
+        faces_group = self._create_stat_group("Faces Detectadas")
         self.faces_label = QLabel("0")
         self.faces_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.faces_label.setStyleSheet("""
@@ -61,7 +61,7 @@ class StatsPanelQt(QWidget):
         layout.addWidget(faces_group)
         
         # Emoção
-        emotion_group = self._create_stat_group("[:)] Emoção Principal")
+        emotion_group = self._create_stat_group("Emoção Principal")
         self.emotion_label = QLabel("--")
         self.emotion_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.emotion_label.setStyleSheet("""
@@ -80,7 +80,7 @@ class StatsPanelQt(QWidget):
         layout.addWidget(emotion_group)
         
         # Atividade
-        activity_group = self._create_stat_group("[>] Atividade Principal")
+        activity_group = self._create_stat_group("Atividade Principal")
         self.activity_label = QLabel("--")
         self.activity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.activity_label.setStyleSheet("""
@@ -99,7 +99,7 @@ class StatsPanelQt(QWidget):
         layout.addWidget(activity_group)
         
         # Anomalias
-        anomaly_group = self._create_stat_group("[!] Anomalias")
+        anomaly_group = self._create_stat_group("Anomalias")
         self.anomaly_label = QLabel("0")
         self.anomaly_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.anomaly_label.setStyleSheet("""
@@ -114,7 +114,7 @@ class StatsPanelQt(QWidget):
         layout.addWidget(anomaly_group)
         
         # Botão detalhes
-        self.details_btn = QPushButton("[i] Ver Detalhes Completos")
+        self.details_btn = QPushButton("Ver Detalhes Completos")
         self.details_btn.clicked.connect(self._show_details)
         self.details_btn.setEnabled(False)
         self.details_btn.setStyleSheet("""

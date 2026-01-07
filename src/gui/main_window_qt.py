@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt
 from .threads import ProcessorThreadQt
+from .icon_provider import IconProvider
 from ..config import OUTPUT_DIR
 
 
@@ -24,18 +25,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Tech Challenge - Fase 4: Análise de Vídeo com IA")
         self.resize(1400, 900)
-        
-        # Configurar suporte a emojis (Qt 6.9+)
-        try:
-            # Tenta usar fontes do sistema que suportam emojis
-            emoji_fonts = ["Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Twitter Color Emoji"]
-            for font in emoji_fonts:
-                if font in QFontDatabase.families():
-                    QFontDatabase.addApplicationEmojiFontFamily(font)
-                    break
-        except AttributeError:
-            # Fallback para Qt < 6.9
-            pass
         
         # Estado
         self.video_path = None
@@ -158,26 +147,30 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         
         # Botão Abrir Vídeo
-        open_action = QAction("[+] Abrir Vídeo", self)
+        open_action = QAction(IconProvider.document_open(), "Abrir Vídeo", self)
         open_action.setShortcut("Ctrl+O")
+        open_action.setToolTip("Abrir vídeo para análise (Ctrl+O)")
         open_action.triggered.connect(self._open_video)
         toolbar.addAction(open_action)
         
         toolbar.addSeparator()
         
         # Botão Processar
-        self.start_action = QAction("[▶] Processar", self)
+        self.start_action = QAction(IconProvider.media_play(), "Processar", self)
+        self.start_action.setToolTip("Iniciar processamento do vídeo")
         self.start_action.triggered.connect(self._start_processing)
         toolbar.addAction(self.start_action)
         
         # Botão Pausar
-        self.pause_action = QAction("[❚❚] Pausar", self)
+        self.pause_action = QAction(IconProvider.media_pause(), "Pausar", self)
+        self.pause_action.setToolTip("Pausar processamento")
         self.pause_action.triggered.connect(self._pause_processing)
         self.pause_action.setEnabled(False)
         toolbar.addAction(self.pause_action)
         
         # Botão Parar
-        self.stop_action = QAction("[■] Parar", self)
+        self.stop_action = QAction(IconProvider.media_stop(), "Parar", self)
+        self.stop_action.setToolTip("Parar processamento")
         self.stop_action.triggered.connect(self._stop_processing)
         self.stop_action.setEnabled(False)
         toolbar.addAction(self.stop_action)
@@ -185,14 +178,16 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         
         # Botão Salvar
-        save_action = QAction("[💾] Salvar Vídeo", self)
+        save_action = QAction(IconProvider.document_save(), "Salvar Vídeo", self)
         save_action.setShortcut("Ctrl+S")
+        save_action.setToolTip("Salvar vídeo processado (Ctrl+S)")
         save_action.triggered.connect(self._save_video)
         toolbar.addAction(save_action)
         
         # Botão Exportar
-        export_action = QAction("[📊] Exportar Relatório", self)
+        export_action = QAction(IconProvider.chart_bar(), "Exportar Relatório", self)
         export_action.setShortcut("Ctrl+E")
+        export_action.setToolTip("Exportar relatório de análise (Ctrl+E)")
         export_action.triggered.connect(self._export_report)
         toolbar.addAction(export_action)
         
@@ -202,7 +197,8 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
         
         # Botão Sobre
-        about_action = QAction("[?] Sobre", self)
+        about_action = QAction(IconProvider.help_about(), "Sobre", self)
+        about_action.setToolTip("Informações sobre o aplicativo")
         about_action.triggered.connect(self._show_about)
         toolbar.addAction(about_action)
     
