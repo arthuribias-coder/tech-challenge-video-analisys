@@ -1,4 +1,4 @@
-pre# Tech Challenge - Fase 4: Análise de Vídeo com IA
+# Tech Challenge - Fase 4: Análise de Vídeo com IA
 
 Este projeto consiste em uma aplicação desktop avançada para análise inteligente de vídeos, desenvolvida como parte do Tech Challenge (Fase 4). A solução utiliza técnicas modernas de Visão Computacional e Inteligência Artificial para extrair insights comportamentais, contextuais e emocionais de arquivos de vídeo.
 
@@ -27,15 +27,31 @@ A aplicação segue uma arquitetura modular, onde uma Thread de Processamento (`
 
 ### Pipeline de Processamento
 
-1. **Aquisição de Frame**: O vídeo é lido frame a frame (com suporte a *frame skip* para performance).
-2. **Classificação de Cena (SceneClassifier)**: Identifica o contexto global (ex: "Office"). Executado periodicamente.
-3. **Detecção Orientada (OrientedDetector)**: Verifica objetos rotacionados, essencial para identificar pessoas deitadas com precisão.
-4. **Detecção de Atividades (ActivityDetector)**: Detecta pessoas e keypoints (poses). Integra dados do *OrientedDetector* para refinar a classificação de postura.
-5. **Extração de Faces (FaceDetector)**: Utiliza a geometria dos keypoints para recortar regiões faciais de alta probabilidade (Top-Down approach).
-6. **Análise de Emoções (EmotionAnalyzer)**: Processa os recortes faciais com DeepFace para extrair estados emocionais.
-7. **Detecção de Objetos (ObjectDetector)**: Varre o cenário em busca de objetos gerais.
-8. **Detecção de Anomalias (AnomalyDetector)**: Cruza todas as informações (Cena + Objetos + Ações + Emoções) contra regras pré-definidas para gerar alertas.
-9. **Visualização e UI**: Desenha bounding boxes e textos no frame e emite sinais para atualizar os gráficos da GUI.
+O fluxo de análise é executado sequencialmente para cada frame processado:
+
+```mermaid
+flowchart TD
+    Input[📹 Vídeo] --> Capture[🎬 Captura]
+    Capture --> Scene[🏞️ Cena]
+    Scene --> Pose[🧍 Poses]
+    Pose --> OBB[↪️ Orientação]
+    OBB --> Face[👤 Faces]
+    Face --> Emotion[😊 Emoções]
+    Face --> Object[📦 Objetos]
+    Object --> Anomaly[⚠️ Anomalias]
+    Anomaly --> Gui[🎨 Interface]
+```
+
+| Ordem | Módulo | Função Principal | Tecnologia |
+| :---: | :--- | :--- | :--- |
+| **1** | **SceneClassifier** | Identifica o contexto do ambiente (ex: "Escritório", "Parque") | YOLO11-cls |
+| **2** | **OrientedDetector** | Detecta a orientação de pessoas (em pé vs. deitado) | YOLO11-obb |
+| **3** | **ActivityDetector** | Extrai poses esqueléticas e classifica ações | YOLO11-pose |
+| **4** | **FaceDetector** | Recorta rostos baseando-se na geometria do corpo | Heurística |
+| **5** | **EmotionAnalyzer** | Analisa expressões faciais nos recortes | DeepFace |
+| **6** | **ObjectDetector** | Detecta objetos e valida coerência com a cena | YOLO11-detect |
+| **7** | **AnomalyDetector** | Aplica regras para identificar comportamentos suspeitos | Lógica |
+| **8** | **Visualizer** | Renderiza anotações e atualiza os gráficos | OpenCV/Qt |
 
 ### Estrutura do Projeto
 
