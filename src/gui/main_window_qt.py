@@ -15,7 +15,10 @@ from pathlib import Path
 from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt, SettingsDialog
 from .threads import ProcessorThreadQt
 from .icon_provider import IconProvider
-from ..config import OUTPUT_DIR
+from ..config import (
+    OUTPUT_DIR, FRAME_SKIP, TARGET_FPS, ENABLE_PREVIEW, PREVIEW_FPS,
+    ENABLE_OBJECT_DETECTION, VIDEO_PATH, USE_GPU, YOLO_MODEL_SIZE
+)
 
 
 class MainWindow(QMainWindow):
@@ -34,11 +37,18 @@ class MainWindow(QMainWindow):
         
         # Configurações de processamento padrão
         self.processing_settings = {
-            'frame_skip': 2,
-            'target_fps': 30,
-            'enable_preview': True,
-            'preview_fps': 10
+            'frame_skip': FRAME_SKIP,
+            'target_fps': TARGET_FPS,
+            'enable_preview': ENABLE_PREVIEW,
+            'preview_fps': PREVIEW_FPS,
+            'enable_object_detection': ENABLE_OBJECT_DETECTION,
+            'use_gpu': USE_GPU,
+            'model_size': YOLO_MODEL_SIZE
         }
+        
+        # Define vídeo padrão se disponível
+        if VIDEO_PATH and Path(VIDEO_PATH).exists():
+            self.video_path = Path(VIDEO_PATH)
         
         # Aplica estilo dark
         self.setStyleSheet("""

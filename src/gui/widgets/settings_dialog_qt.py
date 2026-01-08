@@ -92,8 +92,7 @@ class SettingsDialog(QDialog):
         self.settings_panel.gpu_combo.blockSignals(True)
         self.settings_panel.model_size_combo.blockSignals(True)
         self.settings_panel.object_detection_checkbox.blockSignals(True)
-        self.settings_panel.overlay_detection_checkbox.blockSignals(True)
-        self.settings_panel.segment_validation_checkbox.blockSignals(True)
+
         
         # Aplica valores básicos
         self.settings_panel.frame_skip_spinbox.setValue(settings.get('frame_skip', 2))
@@ -117,12 +116,7 @@ class SettingsDialog(QDialog):
         self.settings_panel.object_detection_checkbox.setChecked(
             settings.get('enable_object_detection', True)
         )
-        self.settings_panel.overlay_detection_checkbox.setChecked(
-            settings.get('enable_overlay_detection', False)
-        )
-        self.settings_panel.segment_validation_checkbox.setChecked(
-            settings.get('enable_segment_validation', False)
-        )
+
         
         # Desbloqueia signals
         self.settings_panel.frame_skip_spinbox.blockSignals(False)
@@ -132,8 +126,7 @@ class SettingsDialog(QDialog):
         self.settings_panel.gpu_combo.blockSignals(False)
         self.settings_panel.model_size_combo.blockSignals(False)
         self.settings_panel.object_detection_checkbox.blockSignals(False)
-        self.settings_panel.overlay_detection_checkbox.blockSignals(False)
-        self.settings_panel.segment_validation_checkbox.blockSignals(False)
+
     
     def _on_apply(self):
         """Aplica configurações e fecha dialog."""

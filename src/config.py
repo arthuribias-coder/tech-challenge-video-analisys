@@ -3,11 +3,8 @@ Tech Challenge - Fase 4: Configurações do Projeto
 Centraliza todas as configurações e constantes utilizadas na aplicação.
 """
 
-import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-load_dotenv()
+import os
 
 # Diretórios
 BASE_DIR = Path(__file__).parent.parent
@@ -23,16 +20,12 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
-# Vídeo de entrada
-VIDEO_PATH = os.getenv(
-    "VIDEO_PATH", 
-    str(INPUT_DIR / "Unlocking Facial Recognition_ Diverse Activities Analysis.mp4")
-)
+# Vídeo de entrada padrão
+VIDEO_PATH = str(INPUT_DIR / "Unlocking Facial Recognition_ Diverse Activities Analysis.mp4")
 
 # ===== CONFIGURAÇÕES DE GPU =====
-# Define se deve usar GPU (CUDA) quando disponível
 # Valores: "auto" (detecta automaticamente), "true" (força GPU), "false" (força CPU)
-USE_GPU = os.getenv("USE_GPU", "auto").lower()
+USE_GPU = "auto"
 
 def is_gpu_available() -> bool:
     """Verifica se GPU CUDA está disponível."""
@@ -56,47 +49,40 @@ def get_device() -> str:
     return "cuda" if should_use_gpu() else "cpu"
 
 # ===== CONFIGURAÇÕES DE PROCESSAMENTO =====
-FRAME_SKIP = int(os.getenv("FRAME_SKIP", "2"))
-CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))
+FRAME_SKIP = 2
+CONFIDENCE_THRESHOLD = 0.5
 
 # ===== CONFIGURAÇÕES DO ANALISADOR DE EMOÇÕES =====
-# Método principal: deepface (2-3x mais rápido que FER)
-EMOTION_ANALYZER_METHOD = os.getenv("EMOTION_ANALYZER_METHOD", "deepface")
+EMOTION_ANALYZER_METHOD = "deepface"
+DEEPFACE_BACKBONE = "ArcFace"
+DEEPFACE_CACHE_DIR = str(MODELS_DIR / "deepface")
 
-# DeepFace backbone: 'VGG-Face', 'FaceNet', 'ArcFace', 'Facenet512'
-DEEPFACE_BACKBONE = os.getenv("DEEPFACE_BACKBONE", "ArcFace")
-
-# Thresholds adaptativos por emoção (DeepFace scores são maiores que FER)
-# Emoções passivas (neutral, sad) requerem threshold menor pois são expressões sutis
+# Thresholds adaptativos por emoção
 EMOTION_THRESHOLDS = {
-    'neutral': 0.25,   # Expressões neutras são sutis e comuns
-    'sad': 0.30,       # Tristeza pode ser sutil
-    'happy': 0.35,     # Sorrisos leves precisam threshold menor
-    'surprise': 0.40,  # Surpresa geralmente é mais óbvia
-    'fear': 0.40,      # Medo tende a ser pronunciado
-    'angry': 0.40,     # Raiva é geralmente clara
-    'disgust': 0.45,   # Nojo é expressão complexa
-    'grimace': 0.35    # Caretas variam em intensidade
+    'neutral': 0.25,
+    'sad': 0.30,
+    'happy': 0.35,
+    'surprise': 0.40,
+    'fear': 0.40,
+    'angry': 0.40,
+    'disgust': 0.45,
+    'grimace': 0.35
 }
 
 # Configurações de preview em tempo real
-ENABLE_PREVIEW = os.getenv("ENABLE_PREVIEW", "true").lower() == "true"
-PREVIEW_FPS = int(os.getenv("PREVIEW_FPS", "10"))
-TARGET_FPS = int(os.getenv("TARGET_FPS", "30"))
+ENABLE_PREVIEW = True
+PREVIEW_FPS = 10
+TARGET_FPS = 30
 
 # ===== CONFIGURAÇÕES DOS DETECTORES AVANÇADOS =====
-# Habilita/desabilita detectores (pode impactar performance)
-ENABLE_OBJECT_DETECTION = os.getenv("ENABLE_OBJECT_DETECTION", "true").lower() == "true"
-ENABLE_OVERLAY_DETECTION = os.getenv("ENABLE_OVERLAY_DETECTION", "false").lower() == "true"
-ENABLE_SEGMENT_VALIDATION = os.getenv("ENABLE_SEGMENT_VALIDATION", "false").lower() == "true"
+ENABLE_OBJECT_DETECTION = True
 
 # Tamanho dos modelos YOLO ('n'=nano, 's'=small, 'm'=medium, 'l'=large)
-# Modelos maiores são mais precisos mas mais lentos
-YOLO_MODEL_SIZE = os.getenv("YOLO_MODEL_SIZE", "n")
+YOLO_MODEL_SIZE = "n"
 
 # OpenAI (opcional para geração de resumo)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_API_KEY = None
+OPENAI_MODEL = "gpt-4o-mini"
 
 # Configurações de visualização
 COLORS = {
@@ -104,6 +90,7 @@ COLORS = {
     "emotion": (255, 255, 0),  # Amarelo para emoções
     "activity": (0, 165, 255), # Laranja para atividades
     "anomaly": (0, 0, 255),    # Vermelho para anomalias
+    "object": (180, 0, 180),   # Roxo para objetos
     "text_bg": (0, 0, 0),      # Fundo preto para texto
 }
 
@@ -116,7 +103,7 @@ EMOTION_LABELS = {
     "sad": "Triste",
     "surprise": "Surpreso",
     "neutral": "Neutro",
-    "grimace": "Careta"  # Expressão exagerada/engraçada
+    "grimace": "Careta"
 }
 
 # Categorias de atividades detectáveis
@@ -133,6 +120,7 @@ ACTIVITY_CATEGORIES = {
     "dancing": "Dançando",
     "crouching": "Agachado",
     "arms_raised": "Braços Levantados",
+    "greeting": "Cumprimentando",
     "unknown": "Desconhecido"
 }
 
@@ -156,95 +144,60 @@ ANOMALY_THRESHOLDS = {
     "activity_duration": 2.0,   # Segundos mínimos para atividade válida
 }
 
+# Regras de contexto de cena
+SCENE_CONTEXT_RULES = {
+    "office": {
+        "keywords": ["office", "conference_room", "cubicle", "library", "classroom", "studio"],
+        "expected": ["person", "chair", "laptop", "tv", "cell phone", "book", "keyboard", "mouse", "desk"],
+        "anomalous": ["umbrella", "sports ball", "skateboard", "baseball bat", "bed", "toilet", "bicycle", "car", "motorcycle"]
+    },
+    "home": {
+        "keywords": ["living_room", "bedroom", "kitchen", "dining_room"],
+        "expected": ["person", "chair", "sofa", "tv", "bed", "refrigerator", "microwave", "cup", "bottle"],
+        "anomalous": ["bicycle", "car", "bus", "truck", "traffic light", "fire hydrant"]
+    },
+    "outdoors": {
+        "keywords": ["park", "street", "playground", "parking", "forest"],
+        "expected": ["person", "bicycle", "car", "dog", "bird", "umbrella", "bench"],
+        "anomalous": ["tv", "mouse", "keyboard", "microwave", "refrigerator", "couch", "bed"]
+    }
+}
+
 # Mapeamento de objetos COCO para português
 OBJECT_LABELS = {
     # Eletrônicos
-    "tv": "TV",
-    "laptop": "Notebook",
-    "cell phone": "Celular",
-    "remote": "Controle Remoto",
-    "keyboard": "Teclado",
-    "mouse": "Mouse",
-    "refrigerator": "Geladeira",
-    "microwave": "Micro-ondas",
-    "oven": "Forno",
-    "toaster": "Torradeira",
+    "tv": "TV", "laptop": "Notebook", "cell phone": "Celular", "remote": "Controle Remoto",
+    "keyboard": "Teclado", "mouse": "Mouse", "refrigerator": "Geladeira",
+    "microwave": "Micro-ondas", "oven": "Forno", "toaster": "Torradeira",
     # Móveis
-    "chair": "Cadeira",
-    "couch": "Sofá",
-    "bed": "Cama",
-    "dining table": "Mesa",
-    "toilet": "Vaso Sanitário",
-    "sink": "Pia",
+    "chair": "Cadeira", "couch": "Sofá", "bed": "Cama", "dining table": "Mesa",
+    "toilet": "Vaso Sanitário", "sink": "Pia",
     # Veículos
-    "car": "Carro",
-    "motorcycle": "Moto",
-    "bicycle": "Bicicleta",
-    "bus": "Ônibus",
-    "truck": "Caminhão",
-    "airplane": "Avião",
-    "train": "Trem",
-    "boat": "Barco",
+    "car": "Carro", "motorcycle": "Moto", "bicycle": "Bicicleta", "bus": "Ônibus",
+    "truck": "Caminhão", "airplane": "Avião", "train": "Trem", "boat": "Barco",
     # Acessórios
-    "backpack": "Mochila",
-    "umbrella": "Guarda-chuva",
-    "handbag": "Bolsa",
-    "tie": "Gravata",
-    "suitcase": "Mala",
+    "backpack": "Mochila", "umbrella": "Guarda-chuva", "handbag": "Bolsa",
+    "tie": "Gravata", "suitcase": "Mala",
     # Esportes
-    "sports ball": "Bola",
-    "kite": "Pipa",
-    "baseball bat": "Taco de Baseball",
-    "baseball glove": "Luva de Baseball",
-    "skateboard": "Skate",
-    "surfboard": "Prancha de Surf",
-    "tennis racket": "Raquete de Tênis",
-    "frisbee": "Frisbee",
-    "skis": "Esquis",
-    "snowboard": "Snowboard",
+    "sports ball": "Bola", "kite": "Pipa", "baseball bat": "Taco de Baseball",
+    "baseball glove": "Luva de Baseball", "skateboard": "Skate", "surfboard": "Prancha de Surf",
+    "tennis racket": "Raquete de Tênis", "frisbee": "Frisbee", "skis": "Esquis", "snowboard": "Snowboard",
     # Animais
-    "bird": "Pássaro",
-    "cat": "Gato",
-    "dog": "Cachorro",
-    "horse": "Cavalo",
-    "sheep": "Ovelha",
-    "cow": "Vaca",
-    "elephant": "Elefante",
-    "bear": "Urso",
-    "zebra": "Zebra",
-    "giraffe": "Girafa",
+    "bird": "Pássaro", "cat": "Gato", "dog": "Cachorro", "horse": "Cavalo",
+    "sheep": "Ovelha", "cow": "Vaca", "elephant": "Elefante", "bear": "Urso",
+    "zebra": "Zebra", "giraffe": "Girafa",
     # Itens diversos
-    "book": "Livro",
-    "clock": "Relógio",
-    "vase": "Vaso",
-    "scissors": "Tesoura",
-    "teddy bear": "Ursinho de Pelúcia",
-    "hair drier": "Secador de Cabelo",
+    "book": "Livro", "clock": "Relógio", "vase": "Vaso", "scissors": "Tesoura",
+    "teddy bear": "Ursinho de Pelúcia", "hair drier": "Secador de Cabelo",
     "toothbrush": "Escova de Dentes",
     # Comida/Bebida
-    "bottle": "Garrafa",
-    "wine glass": "Taça de Vinho",
-    "cup": "Xícara",
-    "fork": "Garfo",
-    "knife": "Faca",
-    "spoon": "Colher",
-    "bowl": "Tigela",
-    "banana": "Banana",
-    "apple": "Maçã",
-    "sandwich": "Sanduíche",
-    "orange": "Laranja",
-    "broccoli": "Brócolis",
-    "carrot": "Cenoura",
-    "hot dog": "Cachorro-Quente",
-    "pizza": "Pizza",
-    "donut": "Rosquinha",
-    "cake": "Bolo",
+    "bottle": "Garrafa", "wine glass": "Taça de Vinho", "cup": "Xícara",
+    "fork": "Garfo", "knife": "Faca", "spoon": "Colher", "bowl": "Tigela",
+    "banana": "Banana", "apple": "Maçã", "sandwich": "Sanduíche", "orange": "Laranja",
+    "broccoli": "Brócolis", "carrot": "Cenoura", "hot dog": "Cachorro-Quente",
+    "pizza": "Pizza", "donut": "Rosquinha", "cake": "Bolo",
     # Outros
-    "person": "Pessoa",
-    "traffic light": "Semáforo",
-    "fire hydrant": "Hidrante",
-    "stop sign": "Placa de Pare",
-    "parking meter": "Parquímetro",
-    "bench": "Banco",
+    "person": "Pessoa", "traffic light": "Semáforo", "fire hydrant": "Hidrante",
+    "stop sign": "Placa de Pare", "parking meter": "Parquímetro", "bench": "Banco",
     "potted plant": "Planta",
 }

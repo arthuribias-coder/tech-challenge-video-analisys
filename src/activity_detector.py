@@ -29,6 +29,7 @@ class ActivityType(Enum):
     DANCING = "dancing"
     CROUCHING = "crouching"
     ARMS_RAISED = "arms_raised"
+    GREETING = "greeting"  # Cumprimentando (Handshake)
     UNKNOWN = "unknown"
 
 
@@ -113,8 +114,14 @@ class ActivityDetector:
                 self.model = None
                 self.model_loaded = False
     
-    def detect(self, frame: np.ndarray) -> List[ActivityDetection]:
-        """Detecta pessoas e suas atividades no frame."""
+    def detect(self, frame: np.ndarray, oriented_detections: Optional[List] = None) -> List[ActivityDetection]:
+        """
+        Detecta pessoas e suas atividades no frame.
+        
+        Args:
+            frame: Frame BGR
+            oriented_detections: Lista de OrientedDetection (opcional) para refinar postura
+        """
         if not self.model_loaded:
             return []
         
@@ -152,6 +159,13 @@ class ActivityDetector:
                 # Analisa atividade
                 activity, act_conf = self._analyze_activity(person_id, keypoints)
                 
+                # Integração com Oriented Detection (OBB)
+                if oriented_detections:
+                    is_lying_obb = self._match_orientation(bbox, oriented_detections)
+                    if is_lying_obb and activity != ActivityType.LYING:
+                        activity = ActivityType.LYING
+                        act_conf = max(act_conf, 0.85)
+
                 # Velocidade
                 velocity = self._calculate_velocity(person_id, bbox)
                 
@@ -165,7 +179,61 @@ class ActivityDetector:
                     velocity=velocity
                 ))
         
+        # Detecta interações sociais (ex: aperto de mão)
+        detections = self._detect_social_interactions(detections)
+        
         return detections
+
+    def _detect_social_interactions(self, detections: List[ActivityDetection]) -> List[ActivityDetection]:
+        """Detecta interações entre pessoas (ex: aperto de mão)."""
+        if len(detections) < 2:
+            return detections
+            
+        for i in range(len(detections)):
+            for j in range(i + 1, len(detections)):
+                p1 = detections[i]
+                p2 = detections[j]
+                
+                # Se ambos têm pulso direito detectado
+                if p1.keypoints.right_wrist and p2.keypoints.right_wrist:
+                    rw1 = p1.keypoints.right_wrist
+                    rw2 = p2.keypoints.right_wrist
+                    
+                    # Distância entre pulsos
+                    dist = np.sqrt((rw1[0] - rw2[0])**2 + (rw1[1] - rw2[1])**2)
+                    
+                    # Se pulsos estão muito próximos (< 50px) e pessoas próximas
+                    # Verifica também a distância dos ombros para garantir que são pessoas diferentes próximas
+                    s1 = p1.keypoints.right_shoulder or p1.keypoints.left_shoulder
+                    s2 = p2.keypoints.right_shoulder or p2.keypoints.left_shoulder
+                    
+                    if s1 and s2:
+                        shoulder_dist = np.sqrt((s1[0] - s2[0])**2 + (s1[1] - s2[1])**2)
+                        
+                        # Pulsos unidos (<100px) mas corpos separados (>100px)
+                        if dist < 100 and shoulder_dist > 100:
+                            # Classifica ambos como cumprimento
+                            p1.activity = ActivityType.GREETING
+                            p1.activity_pt = ACTIVITY_CATEGORIES.get("greeting", "Cumprimentando")
+                            p2.activity = ActivityType.GREETING
+                            p2.activity_pt = ACTIVITY_CATEGORIES.get("greeting", "Cumprimentando")
+                            
+        return detections
+
+    def _match_orientation(self, person_bbox: Tuple[int, int, int, int], oriented_detections: List) -> bool:
+        """Verifica se há um OrientedDetection correspondente que indica 'Deitado'."""
+        px, py, pw, ph = person_bbox[0], person_bbox[1], person_bbox[2], person_bbox[3]
+        pcx, pcy = px + pw/2, py + ph/2
+        
+        for obb in oriented_detections:
+            # Proximidade de centro
+            dist = np.sqrt((pcx - obb.center[0])**2 + (pcy - obb.center[1])**2)
+            
+            # Se centros estão próximos (menos de metade da maior dimensão)
+            if dist < max(pw, ph) * 0.5:
+                if obb.is_lying_down():
+                    return True
+        return False
     
     def _extract_keypoints(
         self, 

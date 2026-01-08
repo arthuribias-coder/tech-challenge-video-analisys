@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from collections import Counter
 
-from ...config import ANOMALY_LABELS, OBJECT_LABELS
+from ...config import ANOMALY_LABELS, OBJECT_LABELS, ACTIVITY_CATEGORIES, EMOTION_LABELS
 
 
 class ChartsPanelQt(QWidget):
@@ -19,7 +19,8 @@ class ChartsPanelQt(QWidget):
         self.stats = {
             'emotions': Counter(),
             'activities': Counter(),
-            'anomalies': Counter()
+            'anomalies': Counter(),
+            'scenes': Counter()
         }
         
         self._setup_ui()
@@ -179,7 +180,8 @@ class ChartsPanelQt(QWidget):
         # Dados e cálculo de percentuais
         items = emotions.most_common(7)  # Top 7
         total = sum(emotions.values())
-        labels = [item[0] for item in items]
+        # labels = [item[0] for item in items]
+        labels = [EMOTION_LABELS.get(item[0], item[0]) for item in items]
         values = [(item[1] / total * 100) for item in items]  # Percentuais
         
         # Gráfico de barras horizontal
@@ -221,7 +223,8 @@ class ChartsPanelQt(QWidget):
         # Dados e cálculo de percentuais
         items = activities.most_common(7)  # Top 7
         total = sum(activities.values())
-        labels = [item[0] for item in items]
+        # labels = [item[0] for item in items]
+        labels = [ACTIVITY_CATEGORIES.get(item[0], item[0]) for item in items]
         values = [(item[1] / total * 100) for item in items]  # Percentuais
         
         # Gráfico de barras horizontal
@@ -369,3 +372,4 @@ class ChartsPanelQt(QWidget):
         
         fig.tight_layout()
         self.objects_canvas.draw()
+

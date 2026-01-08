@@ -10,8 +10,6 @@ from .visualizer import draw_detections, put_text, show_frame
 
 # Novos módulos da Fase 4 (detecção avançada de anomalias)
 from .object_detector import ObjectDetector, ObjectDetection, ObjectCategory
-from .overlay_detector import OverlayDetector, OverlayDetection, OverlayType
-from .segment_validator import SegmentValidator, SegmentValidation
 
 __all__ = [
     "VIDEO_PATH", "OUTPUT_DIR", "REPORTS_DIR", "INPUT_DIR",
@@ -23,6 +21,4 @@ __all__ = [
     "draw_detections", "put_text", "show_frame",
     # Novos exports
     "ObjectDetector", "ObjectDetection", "ObjectCategory",
-    "OverlayDetector", "OverlayDetection", "OverlayType",
-    "SegmentValidator", "SegmentValidation",
 ]

@@ -110,6 +110,14 @@ COCO_CATEGORIES = {
 # Classes que indicam potenciais anomalias visuais (overlays, edições)
 OVERLAY_INDICATOR_CLASSES = {62, 63, 67}  # tv, laptop, cell phone (podem ser overlays)
 
+# Objetos suspeitos para o contexto de análise social/escritório
+# A presença destes objetos geralmente indica erro de detecção ou imagens fora de contexto
+SUSPICIOUS_CONTEXT_OBJECTS = {
+    "umbrella", "kite", "skateboard", "skis", "snowboard", "surfboard", "baseball bat",
+    "zebra", "giraffe", "elephant", "bear", "sheep", "cow", "horse", 
+    "airplane", "boat", "train", "stop sign", "fire hydrant"
+}
+
 
 class ObjectDetector:
     """
@@ -283,6 +291,10 @@ class ObjectDetector:
         if area_ratio > 0.4:
             return True, f"Objeto '{class_name}' ocupa >40% do frame (possível overlay)"
         
+        # 1.5. Objeto suspeito para o contexto (provável erro ou imagem inserida)
+        if class_name in SUSPICIOUS_CONTEXT_OBJECTS:
+            return True, f"Objeto '{class_name}' atípico para o contexto (possível erro/gráfico)"
+
         # 2. TV/Laptop em posição estranha (canto superior = possível logo/watermark)
         if class_id in OVERLAY_INDICATOR_CLASSES:
             # Se está no canto superior direito ou esquerdo

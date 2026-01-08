@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
-from .config import OPENAI_API_KEY, OPENAI_MODEL, REPORTS_DIR, EMOTION_LABELS
+from .config import OPENAI_API_KEY, OPENAI_MODEL, REPORTS_DIR, EMOTION_LABELS, ACTIVITY_CATEGORIES, ANOMALY_LABELS
 
 
 @dataclass
@@ -182,7 +182,8 @@ class ReportGenerator:
         
         table = "| Atividade | Frequência |\n|-----------|------------|\n"
         for activity, count in sorted_activities:
-            table += f"| {activity} | {count} |\n"
+            activity_pt = ACTIVITY_CATEGORIES.get(activity, activity)
+            table += f"| {activity_pt} | {count} |\n"
         
         return f"""## Detecção de Atividades
 
@@ -197,7 +198,8 @@ class ReportGenerator:
         # Tabela por tipo
         type_table = "| Tipo de Anomalia | Quantidade |\n|------------------|------------|\n"
         for atype, count in result.anomalies_by_type.items():
-            type_table += f"| {atype} | {count} |\n"
+            atype_pt = ANOMALY_LABELS.get(atype, atype)
+            type_table += f"| {atype_pt} | {count} |\n"
         
         # Lista detalhada (limitada a 20 eventos)
         events_list = ""
@@ -283,10 +285,11 @@ Resumo:
         # Atividade dominante
         dominant_activity = "N/A"
         if result.activities_summary:
-            dominant_activity = max(
+            raw_activity = max(
                 result.activities_summary, 
                 key=result.activities_summary.get
             )
+            dominant_activity = ACTIVITY_CATEGORIES.get(raw_activity, raw_activity)
         
         # Monta resumo
         summary = f"""O vídeo analisado tem duração de {result.duration_seconds:.1f} segundos e contém {result.total_frames} frames.

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from collections import deque
 from enum import Enum
 from datetime import datetime
+from .config import SCENE_CONTEXT_RULES
 
 
 class AnomalyType(Enum):
@@ -599,6 +600,63 @@ class AnomalyDetector:
         if segment_results:
             anomalies.extend(self.process_segment_validation(frame_number, segment_results))
         
+        return anomalies
+
+
+    def update_with_context(
+        self,
+        frame_number: int,
+        face_detections: List,
+        emotion_results: List,
+        activity_detections: List,
+        scene_context: Optional[object] = None,
+        detected_objects: Optional[List] = None
+    ) -> List[AnomalyEvent]:
+        """
+        Wrapper que inclui validação contextual de cena.
+        Combina detecção comportamental padrão com regras de contexto.
+        """
+        # Executa detecção padrão (comportamental)
+        anomalies = self.update(frame_number, face_detections, emotion_results, activity_detections)
+        
+        # Validação Contextual (Cena vs Objetos)
+        if self.enable_object_anomalies and scene_context and detected_objects:
+            ctx_anomalies = self._check_context_anomalies(frame_number, scene_context, detected_objects)
+            anomalies.extend(ctx_anomalies)
+            
+        return anomalies
+
+    def _check_context_anomalies(self, frame_number: int, scene_context, objects: List) -> List[AnomalyEvent]:
+        """Verifica se objetos presentes são consistentes com a cena detectada."""
+        anomalies = []
+        scene_type = scene_context.scene_type
+        
+        if scene_type not in SCENE_CONTEXT_RULES:
+            return anomalies
+            
+        rules = SCENE_CONTEXT_RULES[scene_type]
+        anomalous_objs = rules.get("anomalous", [])
+        
+        for obj in objects:
+            # Verifica se o nome do objeto está na lista de proibidos
+            if obj.class_name.lower() in anomalous_objs:
+                # Gera evento
+                event = AnomalyEvent(
+                    anomaly_type=AnomalyType.SCENE_INCONSISTENCY,
+                    timestamp=frame_number / self.fps,
+                    frame_number=frame_number,
+                    person_id=None,
+                    severity=0.85,
+                    description=f"Objeto indevido ({obj.class_name}) em {scene_type}",
+                    bbox=obj.bbox,
+                    details={
+                        "scene": scene_type, 
+                        "object": obj.class_name, 
+                        "confidence": float(obj.confidence)
+                    }
+                )
+                anomalies.append(event)
+                
         return anomalies
 
 

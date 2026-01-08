@@ -11,8 +11,9 @@ from PyQt6.QtCore import pyqtSignal, Qt
 
 # Importa configurações padrão
 from ...config import (
-    ENABLE_OBJECT_DETECTION, ENABLE_OVERLAY_DETECTION, ENABLE_SEGMENT_VALIDATION,
-    YOLO_MODEL_SIZE, USE_GPU, is_gpu_available
+    ENABLE_OBJECT_DETECTION,
+    YOLO_MODEL_SIZE, USE_GPU, is_gpu_available,
+    FRAME_SKIP, TARGET_FPS, PREVIEW_FPS, ENABLE_PREVIEW
 )
 
 
@@ -44,7 +45,7 @@ class ProcessingSettingsPanel(QWidget):
         self.frame_skip_spinbox = QSpinBox()
         self.frame_skip_spinbox.setMinimum(1)
         self.frame_skip_spinbox.setMaximum(10)
-        self.frame_skip_spinbox.setValue(2)
+        self.frame_skip_spinbox.setValue(FRAME_SKIP)
         self.frame_skip_spinbox.setToolTip("Pula N frames durante processamento (maior = mais rápido, menor precisão)")
         self.frame_skip_spinbox.valueChanged.connect(self._emit_settings)
         basic_layout.addRow("Frame Skip:", self.frame_skip_spinbox)
@@ -52,7 +53,7 @@ class ProcessingSettingsPanel(QWidget):
         # FPS Alvo
         self.fps_combo = QComboBox()
         self.fps_combo.addItems(["15", "30", "60"])
-        self.fps_combo.setCurrentText("30")
+        self.fps_combo.setCurrentText(str(TARGET_FPS))
         self.fps_combo.setToolTip("Quadros por segundo do vídeo de saída")
         self.fps_combo.currentTextChanged.connect(self._emit_settings)
         basic_layout.addRow("FPS Alvo:", self.fps_combo)
@@ -100,7 +101,7 @@ class ProcessingSettingsPanel(QWidget):
         
         # Checkbox para habilitar preview
         self.preview_checkbox = QCheckBox("Mostrar preview em tempo real")
-        self.preview_checkbox.setChecked(True)
+        self.preview_checkbox.setChecked(ENABLE_PREVIEW)
         self.preview_checkbox.setToolTip("Mostra frames processados durante análise (usa mais memória)")
         self.preview_checkbox.stateChanged.connect(self._on_preview_toggled)
         preview_layout.addRow(self.preview_checkbox)
@@ -110,7 +111,7 @@ class ProcessingSettingsPanel(QWidget):
         self.preview_fps_label = QLabel("Taxa do Preview:")
         self.preview_fps_combo = QComboBox()
         self.preview_fps_combo.addItems(["5 FPS", "10 FPS", "15 FPS"])
-        self.preview_fps_combo.setCurrentIndex(1)  # 10 FPS
+        self.preview_fps_combo.setCurrentText(f"{PREVIEW_FPS} FPS")  # Usa valor da config
         self.preview_fps_combo.setToolTip("Frequência de atualização do preview (menor = menos overhead)")
         self.preview_fps_combo.currentTextChanged.connect(self._emit_settings)
         preview_fps_layout.addWidget(self.preview_fps_label)
@@ -175,19 +176,7 @@ class ProcessingSettingsPanel(QWidget):
         self.object_detection_checkbox.stateChanged.connect(self._emit_settings)
         detectors_layout.addWidget(self.object_detection_checkbox)
         
-        # Checkbox: Overlay Detection (OCR)
-        self.overlay_detection_checkbox = QCheckBox("Detectar overlays/texto (OCR)")
-        self.overlay_detection_checkbox.setChecked(ENABLE_OVERLAY_DETECTION)
-        self.overlay_detection_checkbox.setToolTip("Detecta watermarks, timestamps e textos sobrepostos (requer easyocr)")
-        self.overlay_detection_checkbox.stateChanged.connect(self._emit_settings)
-        detectors_layout.addWidget(self.overlay_detection_checkbox)
-        
-        # Checkbox: Segment Validation
-        self.segment_validation_checkbox = QCheckBox("Validar silhuetas humanas")
-        self.segment_validation_checkbox.setChecked(ENABLE_SEGMENT_VALIDATION)
-        self.segment_validation_checkbox.setToolTip("Usa YOLO11-seg para validar se silhuetas são humanas reais (mais lento)")
-        self.segment_validation_checkbox.stateChanged.connect(self._emit_settings)
-        detectors_layout.addWidget(self.segment_validation_checkbox)
+
         
         layout.addWidget(detectors_group)
         
@@ -321,9 +310,7 @@ class ProcessingSettingsPanel(QWidget):
             'use_gpu': use_gpu,
             'model_size': model_size,
             # Detectores
-            'enable_object_detection': self.object_detection_checkbox.isChecked(),
-            'enable_overlay_detection': self.overlay_detection_checkbox.isChecked(),
-            'enable_segment_validation': self.segment_validation_checkbox.isChecked()
+            'enable_object_detection': self.object_detection_checkbox.isChecked()
         }
     
     def set_enabled_all(self, enabled):
@@ -341,5 +328,3 @@ class ProcessingSettingsPanel(QWidget):
         self.gpu_combo.setEnabled(enabled)
         self.model_size_combo.setEnabled(enabled)
         self.object_detection_checkbox.setEnabled(enabled)
-        self.overlay_detection_checkbox.setEnabled(enabled)
-        self.segment_validation_checkbox.setEnabled(enabled)

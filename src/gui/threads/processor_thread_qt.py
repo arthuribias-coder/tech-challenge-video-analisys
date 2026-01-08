@@ -9,13 +9,13 @@ import cv2
 import numpy as np
 from collections import Counter
 
-from ...face_detector import FaceDetector
+from ...face_detector import FaceDetector, FaceDetection
 from ...emotion_analyzer import EmotionAnalyzer
 from ...activity_detector import ActivityDetector
 from ...anomaly_detector import AnomalyDetector
-from ...visualizer import draw_detections
+from ...visualizer import draw_detections, put_text
 from ...config import (
-    ENABLE_OBJECT_DETECTION, ENABLE_OVERLAY_DETECTION, ENABLE_SEGMENT_VALIDATION,
+    ENABLE_OBJECT_DETECTION, 
     should_use_gpu, get_device
 )
 
@@ -27,19 +27,17 @@ except ImportError:
     OBJECT_DETECTOR_AVAILABLE = False
     print("[INFO] ObjectDetector não disponível")
 
-try:
-    from ...overlay_detector import OverlayDetector
-    OVERLAY_DETECTOR_AVAILABLE = True
-except ImportError:
-    OVERLAY_DETECTOR_AVAILABLE = False
-    print("[INFO] OverlayDetector não disponível")
+# OverlayDetector e SegmentValidator foram removidos (fora de escopo/over-engineering)
+OVERLAY_DETECTOR_AVAILABLE = False
+SEGMENT_VALIDATOR_AVAILABLE = False
+SCENE_CLASSIFIER_AVAILABLE = False
 
 try:
-    from ...segment_validator import SegmentValidator
-    SEGMENT_VALIDATOR_AVAILABLE = True
-except ImportError:
-    SEGMENT_VALIDATOR_AVAILABLE = False
-    print("[INFO] SegmentValidator não disponível")
+    from ...oriented_detector import OrientedDetector
+    ORIENTED_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    ORIENTED_DETECTOR_AVAILABLE = False
+    print(f"[INFO] OrientedDetector não disponível: {e}")
 
 
 class ProcessorThreadQt(QThread):
@@ -53,11 +51,10 @@ class ProcessorThreadQt(QThread):
     
     def __init__(self, video_path, output_path, frame_skip=2, target_fps=30, 
                  enable_preview=True, preview_fps=10,
-                 # Novas opções para detectores avançados (usa config como padrão)
                  enable_object_detection=None,
+                 # Args legados mantidos para compatibilidade, mas ignorados
                  enable_overlay_detection=None,
                  enable_segment_validation=None,
-                 # Configurações de hardware
                  use_gpu=None,
                  model_size=None
                  ):
@@ -70,18 +67,15 @@ class ProcessorThreadQt(QThread):
         self.enable_preview = enable_preview
         self.preview_fps = preview_fps
         
-        # Armazena configurações de hardware para os detectores
-        self.use_gpu = use_gpu  # "auto", "true", "false" ou None
-        self.model_size = model_size  # "n", "s", "m", "l" ou None
+        self.use_gpu = use_gpu
+        self.model_size = model_size
         
-        # Opções de detectores avançados (usa config se None)
-        obj_enabled = enable_object_detection if enable_object_detection is not None else ENABLE_OBJECT_DETECTION
-        overlay_enabled = enable_overlay_detection if enable_overlay_detection is not None else ENABLE_OVERLAY_DETECTION
-        seg_enabled = enable_segment_validation if enable_segment_validation is not None else ENABLE_SEGMENT_VALIDATION
+        # Configuração simplificada
+        self.enable_object_detection = enable_object_detection if enable_object_detection is not None else ENABLE_OBJECT_DETECTION
         
-        self.enable_object_detection = obj_enabled and OBJECT_DETECTOR_AVAILABLE
-        self.enable_overlay_detection = overlay_enabled and OVERLAY_DETECTOR_AVAILABLE
-        self.enable_segment_validation = seg_enabled and SEGMENT_VALIDATOR_AVAILABLE
+        # Features removidas
+        self.enable_overlay_detection = False
+        self.enable_segment_validation = False
         
         self.is_paused = False
         self.should_stop = False
@@ -99,21 +93,20 @@ class ProcessorThreadQt(QThread):
             device = get_device()
             model_size = self.model_size if self.model_size else "n"
             print(f"[INFO] Inicializando componentes (device: {device}, model_size: {model_size})...")
-            print(f"[INFO] Detectores: object={self.enable_object_detection}, overlay={self.enable_overlay_detection}, segment={self.enable_segment_validation}")
             
             # Inicializa componentes principais
             face_detector = FaceDetector()
-            emotion_analyzer = EmotionAnalyzer()  # Usa DeepFace por padrão (via config)
+            emotion_analyzer = EmotionAnalyzer()
             activity_detector = ActivityDetector(model_size=model_size)
             anomaly_detector = AnomalyDetector(
                 enable_object_anomalies=self.enable_object_detection,
-                enable_overlay_anomalies=self.enable_overlay_detection
+                enable_overlay_anomalies=False # Overlay detector foi removido
             )
             
-            # Inicializa componentes avançados (opcionais)
+            # Inicializa componentes opcionais
             object_detector = None
-            overlay_detector = None
-            segment_validator = None
+            overlay_detector = None # Removido
+            segment_validator = None # Removido
             
             if self.enable_object_detection:
                 try:
@@ -123,21 +116,20 @@ class ProcessorThreadQt(QThread):
                     print(f"[WARN] ObjectDetector falhou: {e}")
                     self.enable_object_detection = False
             
-            if self.enable_overlay_detection:
-                try:
-                    overlay_detector = OverlayDetector(use_easyocr=True, min_text_confidence=0.5)
-                    print("[INFO] OverlayDetector habilitado")
-                except Exception as e:
-                    print(f"[WARN] OverlayDetector falhou: {e}")
-                    self.enable_overlay_detection = False
+            # Overlay e Validator removidos
+            overlay_detector = None
+            segment_validator = None
             
-            if self.enable_segment_validation:
+            # Inicializa compontentes novos (Scene + OBB)
+            scene_classifier = None
+            oriented_detector = None
+            
+            if ORIENTED_DETECTOR_AVAILABLE:
                 try:
-                    segment_validator = SegmentValidator(model_size=model_size, min_confidence=0.5)
-                    print("[INFO] SegmentValidator habilitado")
+                    oriented_detector = OrientedDetector(model_size=model_size)
+                    print("[INFO] OrientedDetector habilitado")
                 except Exception as e:
-                    print(f"[WARN] SegmentValidator falhou: {e}")
-                    self.enable_segment_validation = False
+                    print(f"[WARN] OrientedDetector falhou: {e}")
             
             print(f"[INFO] Abrindo vídeo: {self.video_path}")
             
@@ -174,7 +166,8 @@ class ProcessorThreadQt(QThread):
                 'activities': Counter(),
                 'anomalies': Counter(),
                 'objects': Counter(),  # Novo: contagem de objetos
-                'overlays': 0  # Novo: contagem de overlays
+                'overlays': 0,  # Novo: contagem de overlays
+                # 'scenes': Counter()  # Novo: contagem de tipos de cena
             }
             
             frame_idx = 0
@@ -228,50 +221,100 @@ class ProcessorThreadQt(QThread):
                     anomalies = []
                     
                     try:
-                        # 1. Detecta ATIVIDADES primeiro (para otimização de rostos)
-                        activities = activity_detector.detect(frame)
+                        # 0. Contexto de Cena (YOLO-cls) - REMOVIDO
+                        scene_ctx = None
+                        # if scene_classifier:
+                        #     # Atualiza a cada 30 frames para otimização
+                        #     force = (frame_idx % 30 == 0)
+                        #     scene_ctx = scene_classifier.classify(frame, force_update=force)
+                            
+                        #     # Atualiza estatísticas de cena
+                        #     if scene_ctx:
+                        #         stats['scenes'][scene_ctx.scene_type] += 1
+                            
+                        # 0.5 Orientação (YOLO-obb)
+                        obb_results = []
+                        if oriented_detector:
+                            obb_results = oriented_detector.detect(frame)
+
+                        # 1. Detecta ATIVIDADES primeiro (passando OBB para refinar lying vs standing)
+                        activities = activity_detector.detect(frame, oriented_detections=obb_results)
                         for activity in activities:
                             activity_name = activity.activity_pt if hasattr(activity, 'activity_pt') else str(activity)
                             stats['activities'][activity_name] = stats['activities'].get(activity_name, 0) + 1
-                        
-                        # Prepara regiões para detecção rotacionada (pessoas deitadas)
-                        lying_regions = []
-                        # Import local para evitar circular, ou usa string
-                        # Assumindo que act.activity é Enum, mas debug mostra que activity names são string em stats
-                        # Mas act.activity é o Enum.
-                        
-                        for act in activities:
-                            # Verifica se é "lying" (pelo value do enum ou string)
-                            is_lying = False
-                            if hasattr(act.activity, 'value'):
-                                is_lying = (act.activity.value == "lying")
-                            else:
-                                is_lying = (str(act.activity) == "lying")
-                                
-                            if is_lying:
-                                # Usa keypoints para focar na cabeça (muito mais rápido que rotacionar bbox inteiro)
-                                if act.keypoints and act.keypoints.nose:
-                                    nx, ny = act.keypoints.nose
-                                    # Cria região ao redor do nariz (tamanho depende do bbox da pessoa ou fixo)
-                                    # Estima tamanho da cabeça baseado na altura/largura da pessoa
-                                    px, py, pw, ph = act.bbox
-                                    person_dim = min(pw, ph) # Dimensão menor (largura se deitado)
-                                    head_size = int(max(100, person_dim * 0.4)) # 40% da dimensão menor
-                                    
-                                    hx = int(nx - head_size/2)
-                                    hy = int(ny - head_size/2)
-                                    lying_regions.append((hx, hy, head_size, head_size))
-                                else:
-                                    # Fallback: bbox inteiro da pessoa
-                                    lying_regions.append(act.bbox)
 
-                        # 2. Detecta faces (Normal + Regiões Rotacionadas)
-                        faces = face_detector.detect(frame)
+                        # 2. Detecta faces (Top-Down: Extrai de Pessoas/Atividades)
+                        # Removemos detecção global (Haar/DNN) para evitar falsos positivos no cenário
+                        # Agora o rosto é extraído sempre baseado nos Keypoints do YOLO-pose
                         
-                        # Adiciona detecção otimizada nas regiões de pessoas deitadas
-                        if lying_regions:
-                            rotated_faces = face_detector.detect_in_regions(frame, lying_regions)
-                            faces.extend(rotated_faces)
+                        faces = []
+                        if activities:
+                            for act in activities:
+                                # Verifica se há keypoints essenciais para estimar rosto
+                                if act.keypoints and act.keypoints.nose:
+                                    # Pontos chave
+                                    nx, ny = act.keypoints.nose
+                                    
+                                    # Tenta usar olhos para largura
+                                    face_size = 0
+                                    cx, cy = int(nx), int(ny)
+                                    
+                                    if act.keypoints.left_eye and act.keypoints.right_eye:
+                                        lx, ly = act.keypoints.left_eye
+                                        rx, ry = act.keypoints.right_eye
+                                        # Distância entre olhos
+                                        eye_dist = np.sqrt((lx-rx)**2 + (ly-ry)**2)
+                                        # Rosto é aprox 2.5x a distância interpupilar (margem segura)
+                                        face_size = int(eye_dist * 3.0) 
+                                        
+                                        # Ajusta centro para ser entre olhos e nariz
+                                        mid_eye_x = (lx + rx) / 2
+                                        mid_eye_y = (ly + ry) / 2
+                                        cx = int((cx + mid_eye_x) / 2)
+                                        cy = int((cy + mid_eye_y) / 2)
+                                        
+                                    elif act.keypoints.left_ear and act.keypoints.right_ear:
+                                         # Fallback: orelhas (mais largas que olhos)
+                                        lx, ly = act.keypoints.left_ear
+                                        rx, ry = act.keypoints.right_ear
+                                        ear_dist = np.sqrt((lx-rx)**2 + (ly-ry)**2)
+                                        face_size = int(ear_dist * 1.8)
+                                    else:
+                                        # Fallback final: Proporção da altura da pessoa
+                                        # Cabeça é aprox 1/7 ou 1/8 da altura
+                                        px, py, pw, ph = act.bbox
+                                        person_dim = max(ph, pw) # Usa dim maior
+                                        face_size = int(person_dim / 7.0)
+                                        
+                                    # Tamanho mínimo de segurança (30px)
+                                    face_size = max(30, face_size)
+                                    
+                                    # Calcula BBox do rosto (quadrado centrado)
+                                    x = max(0, cx - face_size // 2)
+                                    y = max(0, cy - face_size // 2)
+                                    w = face_size
+                                    h = face_size
+                                    
+                                    # Valida limites do frame
+                                    if x+w > frame.shape[1]: w = frame.shape[1] - x
+                                    if y+h > frame.shape[0]: h = frame.shape[0] - y
+                                    
+                                    # Cria detecção se válida
+                                    if w > 10 and h > 10:
+                                        # Usa ID da pessoa detectada pelo YOLO
+                                        face_id = act.person_id 
+                                        
+                                        # Cria objeto FaceDetection
+                                        faces.append(FaceDetection(
+                                            face_id=face_id,
+                                            bbox=(x, y, w, h),
+                                            confidence=act.confidence,
+                                            landmarks={
+                                                'nose': act.keypoints.nose,
+                                                'left_eye': act.keypoints.left_eye,
+                                                'right_eye': act.keypoints.right_eye
+                                            }
+                                        ))
 
                         stats['faces'] += len(faces)
                         
@@ -324,6 +367,13 @@ class ProcessorThreadQt(QThread):
                             segment_results=segment_results if segment_results else None
                         )
                         
+                        # Validação Contextual de Cena (Extra)
+                        if scene_ctx and objects and anomaly_detector.enable_object_anomalies:
+                            # Chama verificação de contexto se disponível
+                            if hasattr(anomaly_detector, '_check_context_anomalies'):
+                                ctx_anomalies = anomaly_detector._check_context_anomalies(frame_idx, scene_ctx, objects)
+                                anomalies.extend(ctx_anomalies)
+                        
                         for anomaly in anomalies:
                             # AnomalyEvent tem anomaly_type (enum), não .type
                             anomaly_name = anomaly.anomaly_type.value if hasattr(anomaly, 'anomaly_type') else str(anomaly)
@@ -331,6 +381,13 @@ class ProcessorThreadQt(QThread):
                         
                         # Visualiza (inclui objects)
                         processed_frame = draw_detections(frame, faces, emotions, activities, anomalies, objects=objects)
+                        
+                        # Desenha Info de Cena - REMOVIDO
+                        # if scene_ctx:
+                        #      scene_pt = SCENE_LABELS.get(scene_ctx.scene_type, scene_ctx.scene_type).upper()
+                        #      text = f"AMB: {scene_pt} ({scene_ctx.confidence:.1f})"
+                        #      # Usa put_text para suportar acentos UTF-8 (visualizer.py)
+                        #      processed_frame = put_text(processed_frame, text, (10, 50), 24, (0, 255, 255))
                         
                         # Atualiza cache para frames intermediários (persistência de bbox)
                         last_faces = faces
