@@ -6,10 +6,12 @@ opencv-python>=4.8.0
 numpy>=1.26.0
 Pillow>=10.0.0
 
-# Análise de Emoções (FER)
-fer>=22.5.0
+# Análise de Emoções (DeepFace) - mais eficiente que FER, 2-3x mais rápido
+# Versão 0.0.96 é a mais recente disponível no PyPI
+deepface>=0.0.96
+scipy>=1.11.0  # Dependência de DeepFace
 
-# Detecção de Atividades (YOLO11-pose)
+# Detecção de Atividades (YOLO11-pose) - usa PyTorch
 ultralytics>=8.3.0
 
 # Interface Gráfica - PyQt6
@@ -19,4 +21,25 @@ matplotlib>=3.8.0
 
 # Utilitários
 python-dotenv>=1.0.0
+
+# ===== Detecção Avançada de Anomalias - Fase 4 =====
+# OCR para detecção de overlays/texto (100% Python, sem deps de sistema)
+easyocr>=1.7.0        # OCR preciso, suporta PT+EN, usa GPU se disponível
+
+# Alternativa mais leve (requer Tesseract instalado no sistema):
+# pytesseract>=0.3.10
+#   Ubuntu/Debian: sudo apt install tesseract-ocr tesseract-ocr-por
+#   Fedora/RHEL:   sudo dnf install tesseract tesseract-langpack-por
+
+# ===== ACELERAÇÃO GPU (OPCIONAL) =====
+# Para habilitar GPU (NVIDIA CUDA), descomente e instale manualmente:
+#
+# PyTorch com CUDA (para YOLO11, EasyOCR):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# TensorFlow com CUDA (para DeepFace/EmotionAnalyzer):
+#   pip install tensorflow[and-cuda]
+#
+# Verifique sua versão CUDA: nvidia-smi
+# CUDA 12.1+ recomendado para melhor compatibilidade
 

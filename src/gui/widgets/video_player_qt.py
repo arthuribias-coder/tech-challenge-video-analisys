@@ -6,6 +6,17 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButt
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 import cv2
+import numpy as np
+from collections import deque
+from enum import Enum
+
+
+class PlayerMode(Enum):
+    """Modos de operação do player."""
+    IDLE = "idle"
+    READY = "ready"
+    PROCESSING = "processing"
+    PLAYBACK = "playback"
 
 
 class VideoPlayerQt(QWidget):
@@ -22,6 +33,12 @@ class VideoPlayerQt(QWidget):
         self.total_frames = 0
         self.fps = 30
         self.is_playing = False
+        
+        # Preview mode
+        self.mode = PlayerMode.IDLE
+        self.preview_buffer = deque(maxlen=30)
+        self.preview_timer = QTimer()
+        self.preview_timer.timeout.connect(self._show_next_preview_frame)
         
         self.timer = QTimer()
         self.timer.timeout.connect(self._update_frame)
@@ -45,8 +62,25 @@ class VideoPlayerQt(QWidget):
                 font-size: 14px;
             }
         """)
-        self.video_label.setMinimumSize(640, 480)
+        self.video_label.setMinimumSize(400, 300)
+        self.video_label.setScaledContents(False)
         layout.addWidget(self.video_label, stretch=1)
+        
+        # Status overlay (modo de processamento)
+        self.status_overlay = QLabel()
+        self.status_overlay.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.status_overlay.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 180);
+                color: #4CAF50;
+                padding: 10px;
+                border-radius: 5px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+        """)
+        self.status_overlay.hide()
+        layout.addWidget(self.status_overlay)
         
         # Controles
         controls_layout = QHBoxLayout()
@@ -89,6 +123,10 @@ class VideoPlayerQt(QWidget):
         self.total_frames = int(self.video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
         self.fps = self.video_capture.get(cv2.CAP_PROP_FPS)
         self.current_frame_idx = 0
+        
+        # Atualiza modo
+        self.mode = PlayerMode.READY
+        self.status_overlay.hide()
         
         # Atualiza controles
         self.play_btn.setEnabled(True)
@@ -206,3 +244,85 @@ class VideoPlayerQt(QWidget):
         super().resizeEvent(event)
         if self.current_frame is not None:
             self._display_frame(self.current_frame)
+    
+    # ===== Métodos de Preview em Tempo Real =====
+    
+    def enable_preview_mode(self, preview_fps=10, total_frames=0):
+        """Ativa modo preview durante processamento."""
+        self.mode = PlayerMode.PROCESSING
+        self.preview_buffer.clear()
+        
+        # Pausa reprodução normal se estiver ativa
+        if self.is_playing:
+            self.pause()
+        
+        # Configura total de frames para o slider
+        if total_frames > 0:
+            self.total_frames = total_frames
+            self.seek_slider.setMaximum(total_frames - 1)
+        
+        # Mantém slider habilitado para visualização do progresso (mas não seek)
+        self.play_btn.setEnabled(False)
+        self.seek_slider.setEnabled(True)  # Habilitado para mostrar progresso
+        
+        # Mostra overlay
+        self.status_overlay.setText("PREVIEW TEMPO REAL")
+        self.status_overlay.show()
+        
+        # Inicia timer de preview
+        interval = int(1000 / preview_fps)
+        self.preview_timer.start(interval)
+    
+    def disable_preview_mode(self):
+        """Desativa modo preview."""
+        self.preview_timer.stop()
+        self.preview_buffer.clear()
+        self.status_overlay.hide()
+        
+        if self.mode == PlayerMode.PROCESSING:
+            self.mode = PlayerMode.READY
+    
+    def add_preview_frame(self, frame_idx, frame):
+        """Adiciona frame processado ao buffer de preview."""
+        if self.mode != PlayerMode.PROCESSING:
+            return
+        
+        # Adiciona ao buffer (deque descarta automaticamente os mais antigos)
+        self.preview_buffer.append((frame_idx, frame.copy()))
+    
+    def _show_next_preview_frame(self):
+        """Mostra próximo frame do buffer de preview."""
+        if not self.preview_buffer:
+            return
+        
+        # Pega frame mais recente
+        frame_idx, frame = self.preview_buffer[-1]
+        
+        # Atualiza display
+        self.current_frame_idx = frame_idx
+        self._display_frame(frame)
+        
+        # Atualiza slider para mostrar progresso
+        self.seek_slider.blockSignals(True)
+        self.seek_slider.setValue(frame_idx)
+        self.seek_slider.blockSignals(False)
+        
+        # Atualiza time label
+        self._update_time_label()
+        
+        # Atualiza overlay
+        buffer_size = len(self.preview_buffer)
+        self.status_overlay.setText(
+            f"PREVIEW TEMPO REAL\n"
+            f"Frame: {frame_idx}\n"
+            f"Buffer: {buffer_size}/30"
+        )
+    
+    def switch_to_playback_mode(self):
+        """Muda para modo de reprodução após processamento."""
+        self.disable_preview_mode()
+        self.mode = PlayerMode.PLAYBACK
+        
+        # Reabilita controles
+        self.play_btn.setEnabled(True)
+        self.seek_slider.setEnabled(True)

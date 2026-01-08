@@ -1,10 +1,12 @@
 """
 Tech Challenge - Fase 4: Analisador de Emoções
 Módulo responsável pela análise de expressões emocionais em rostos detectados.
+Usa DeepFace como método principal (2-3x mais rápido que FER).
 """
 
 import cv2
 import numpy as np
+import time
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from collections import deque
@@ -24,18 +26,26 @@ class EmotionResult:
 
 class EmotionAnalyzer:
     """
-    Analisador de expressões emocionais usando DeepFace ou FER.
+    Analisador de expressões emocionais usando DeepFace (principal) ou FER (fallback).
+    DeepFace é 2-3x mais rápido que FER e mais preciso em expressões sutis.
     Suporta rastreamento temporal de emoções para suavização.
     """
     
-    def __init__(self, method: str = "fer", temporal_window: int = 5):
+    def __init__(self, method: str = None, temporal_window: int = 5):
         """
         Inicializa o analisador de emoções.
         
         Args:
-            method: Método de análise ('fer', 'deepface')
+            method: Método de análise ('deepface', 'fer', None=auto).
+                   Se None, usa EMOTION_ANALYZER_METHOD do config.
             temporal_window: Janela temporal para suavização (em frames)
         """
+        from .config import EMOTION_ANALYZER_METHOD
+        
+        # Se não especificado, usa config
+        if method is None:
+            method = EMOTION_ANALYZER_METHOD
+        
         self.method = method
         self.temporal_window = temporal_window
         self.emotion_history: Dict[int, deque] = {}  # face_id -> histórico
@@ -44,10 +54,10 @@ class EmotionAnalyzer:
     
     def _init_analyzer(self):
         """Inicializa o analisador baseado no método escolhido."""
-        if self.method == "fer":
-            self._init_fer()
-        elif self.method == "deepface":
+        if self.method == "deepface":
             self._init_deepface()
+        elif self.method == "fer":
+            self._init_fer()
         else:
             raise ValueError(f"Método desconhecido: {self.method}")
     
@@ -69,9 +79,23 @@ class EmotionAnalyzer:
         """Inicializa DeepFace para análise de emoções."""
         try:
             from deepface import DeepFace
+            import os as os_module
+            
+            # Configura cache directory para evitar redownload
+            from .config import DEEPFACE_CACHE_DIR
+            os_module.environ['DEEPFACE_HOME'] = DEEPFACE_CACHE_DIR
+            
+            # Pré-carrega modelo para validar funcionamento
+            # (isso acontece na primeira execução)
             self.analyzer = DeepFace
-        except ImportError:
-            print("[AVISO] DeepFace não instalado, tentando FER")
+            print("[INFO] DeepFace inicializado com sucesso")
+            
+        except ImportError as e:
+            print(f"[AVISO] DeepFace não instalado ({e}), tentando FER")
+            self.method = "fer"
+            self._init_fer()
+        except Exception as e:
+            print(f"[AVISO] Erro ao inicializar DeepFace ({e}), tentando FER")
             self.method = "fer"
             self._init_fer()
     
@@ -106,12 +130,22 @@ class EmotionAnalyzer:
         if face_roi.size == 0:
             return None
         
-        if self.method == "fer":
-            return self._analyze_fer(face_roi, face_id)
-        elif self.method == "deepface":
-            return self._analyze_deepface(face_roi, face_id)
+        # Log de performance
+        t0 = time.time()
+        
+        if self.method == "deepface":
+            result = self._analyze_deepface(face_roi, face_id)
+        elif self.method == "fer":
+            result = self._analyze_fer(face_roi, face_id)
         else:
-            return self._analyze_simple(face_roi, face_id)
+            result = self._analyze_simple(face_roi, face_id)
+        
+        # Log de tempo se tempo > 150ms (aviso de performance)
+        elapsed = (time.time() - t0) * 1000
+        if elapsed > 150:
+            print(f"[AVISO] EmotionAnalyzer.{self.method} lento: {elapsed:.1f}ms para face_id={face_id}")
+        
+        return result
     
     def _analyze_fer(
         self, 
@@ -135,9 +169,49 @@ class EmotionAnalyzer:
             # Aplica suavização temporal
             smoothed_scores = self._smooth_emotions(face_id, emotion_scores)
             
-            # Encontra emoção dominante
-            dominant = max(smoothed_scores, key=smoothed_scores.get)
-            confidence = smoothed_scores[dominant]
+            # === DETECÇÃO DE CARETAS ===
+            # Caretas são expressões exageradas que causam:
+            # 1. Alta variância nos scores (múltiplas emoções ativadas)
+            # 2. Combinações incomuns (ex: surprise + disgust)
+            # 3. Scores extremos em emoções "ativas"
+            
+            is_grimace, grimace_confidence = self._detect_grimace(smoothed_scores, face_id)
+            
+            if is_grimace:
+                # Adiciona "grimace" como emoção detectada
+                smoothed_scores["grimace"] = grimace_confidence
+                dominant = "grimace"
+                confidence = grimace_confidence
+            else:
+                # Tunning de Sensibilidade: Reduz o viés de "Neutro"
+                # Modelos FER tendem a exagerar na classificação 'neutral' quando a expressão é sutil.
+                # Aqui aplicamos uma penalização leve ao score 'neutral' se houver outra emoção competitiva.
+                if "neutral" in smoothed_scores:
+                    neutral_score = smoothed_scores["neutral"]
+                    # Se não é totalmente óbvio que é neutro (>0.7), damos chance para outras emoções
+                    # AJUSTE 2: Mas protegemos contra "Sad" falso positivo (comum ao olhar para baixo/ler)
+                    # Se o "runner-up" (a segunda maior) for "sad", NÃO penalizamos o neutral.
+                    
+                    # Encontra a segunda maior emoção
+                    sorted_emotions = sorted(smoothed_scores.items(), key=lambda x: x[1], reverse=True)
+                    runner_up = sorted_emotions[1][0] if len(sorted_emotions) > 1 else None
+                    
+                    # Só penaliza neutral se o concorrente for 'ativo' (happy, surprise, fear, angry)
+                    # Se o concorrente for 'sad' ou 'disgust', mantemos o neutral forte para evitar falsos positivos de leitura
+                    if neutral_score < 0.7 and runner_up in ["happy", "surprise", "fear", "angry"]: 
+                        smoothed_scores["neutral"] = neutral_score * 0.85
+                        
+                    # AJUSTE 3: Se "Sad" for o dominante, mas "Neutral" for alto, força Neutral.
+                    # Isso corrige pessoas lendo/olhando para baixo sendo classificadas como tristes.
+                    sad_score = smoothed_scores.get("sad", 0)
+                    if sad_score > neutral_score and neutral_score > 0.3:
+                        # Se Sad ganha por pouco ou Neutral ainda é relevante, penaliza Sad
+                        if sad_score < 0.6: # Não é uma tristeza profunda/óbvia
+                             smoothed_scores["sad"] = sad_score * 0.8  # Reduz confiança do triste
+                
+                # Encontra emoção dominante
+                dominant = max(smoothed_scores, key=smoothed_scores.get)
+                confidence = smoothed_scores[dominant]
             
             return EmotionResult(
                 face_id=face_id,
@@ -156,27 +230,39 @@ class EmotionAnalyzer:
         face_roi: np.ndarray, 
         face_id: int
     ) -> Optional[EmotionResult]:
-        """Análise usando DeepFace."""
+        """
+        Análise usando DeepFace.
+        
+        DeepFace retorna scores de 0-100 (percentual) que normalizamos para 0-1.
+        """
         try:
             result = self.analyzer.analyze(
                 face_roi,
                 actions=["emotion"],
                 enforce_detection=False,
-                silent=True
+                silent=True,
+                anti_spoofing=False  # Desabilita verificação anti-spoofing para performance
             )
             
             if not result:
                 return None
             
-            emotion_scores = result[0]["emotion"]
-            # Normaliza para 0-1
+            # Extrai scores de emoção
+            emotion_scores_raw = result[0]["emotion"]
+            
+            # Normaliza scores: DeepFace retorna 0-100, convertemos para 0-1
             emotion_scores = {
-                k: v / 100.0 for k, v in emotion_scores.items()
+                k: v / 100.0 for k, v in emotion_scores_raw.items()
             }
+            
+            # Valida scores
+            if not emotion_scores or sum(emotion_scores.values()) == 0:
+                return None
             
             # Aplica suavização temporal
             smoothed_scores = self._smooth_emotions(face_id, emotion_scores)
             
+            # Encontra emoção dominante
             dominant = max(smoothed_scores, key=smoothed_scores.get)
             confidence = smoothed_scores[dominant]
             
@@ -269,6 +355,80 @@ class EmotionAnalyzer:
             smoothed[emotion] = float(np.average(values, weights=weights))
         
         return smoothed
+    
+    def _detect_grimace(
+        self,
+        emotion_scores: Dict[str, float],
+        face_id: int
+    ) -> Tuple[bool, float]:
+        """
+        Detecta se a expressão é uma careta (expressão exagerada/engraçada).
+        
+        Caretas são identificadas por combinações MUITO incomuns de emoções
+        que raramente ocorrem naturalmente.
+        
+        Args:
+            emotion_scores: Scores das emoções detectadas
+            face_id: ID do rosto para análise temporal
+            
+        Returns:
+            Tuple (is_grimace, confidence)
+        """
+        # Extrai scores das emoções principais
+        surprise = emotion_scores.get("surprise", 0)
+        disgust = emotion_scores.get("disgust", 0)
+        fear = emotion_scores.get("fear", 0)
+        happy = emotion_scores.get("happy", 0)
+        angry = emotion_scores.get("angry", 0)
+        neutral = emotion_scores.get("neutral", 0)
+        sad = emotion_scores.get("sad", 0)
+        
+        # Se neutro é dominante, NÃO é careta
+        if neutral > 0.4:
+            return False, 0.0
+        
+        # Se uma emoção é muito dominante (>0.6), provavelmente é emoção real, não careta
+        max_score = max(emotion_scores.values())
+        if max_score > 0.65:
+            return False, 0.0
+        
+        grimace_score = 0.0
+        
+        # === COMBINAÇÕES MUITO ESPECÍFICAS DE CARETAS ===
+        # Apenas combinações que são MUITO raras naturalmente
+        
+        # 1. Surprise + Disgust AMBOS ALTOS (careta clássica de "eca/bleh")
+        if surprise > 0.25 and disgust > 0.25:
+            grimace_score += 0.7
+        
+        # 2. Fear + Disgust AMBOS ALTOS (careta de nojo exagerado)
+        if fear > 0.25 and disgust > 0.25:
+            grimace_score += 0.6
+        
+        # 3. Happy + Disgust (sorriso + nojo = careta engraçada)
+        if happy > 0.25 and disgust > 0.2:
+            grimace_score += 0.6
+        
+        # 4. Angry + Surprise AMBOS ALTOS (raiva cômica exagerada)
+        if angry > 0.25 and surprise > 0.25:
+            grimace_score += 0.5
+        
+        # 5. Instabilidade temporal EXTREMA (muitas mudanças rápidas)
+        if face_id in self.emotion_history and len(self.emotion_history[face_id]) >= 4:
+            history = list(self.emotion_history[face_id])
+            dominants = [max(h, key=h.get) for h in history[-6:]]
+            changes = sum(1 for i in range(1, len(dominants)) if dominants[i] != dominants[i-1])
+            # Só conta se tiver MUITAS mudanças (3+)
+            if changes >= 3:
+                grimace_score += 0.4
+        
+        # Normaliza para 0-1
+        grimace_score = min(grimace_score, 1.0)
+        
+        # Threshold ALTO para considerar careta (muito restritivo)
+        is_grimace = grimace_score >= 0.55
+        
+        return is_grimace, grimace_score
     
     def get_emotion_trend(self, face_id: int) -> Optional[str]:
         """

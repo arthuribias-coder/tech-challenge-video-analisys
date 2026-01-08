@@ -14,11 +14,18 @@ from datetime import datetime
 
 class AnomalyType(Enum):
     """Tipos de anomalias detectáveis."""
+    # Anomalias comportamentais (originais)
     SUDDEN_MOVEMENT = "sudden_movement"
     EMOTION_SPIKE = "emotion_spike"
     UNUSUAL_ACTIVITY = "unusual_activity"
     CROWD_ANOMALY = "crowd_anomaly"
     PROLONGED_INACTIVITY = "prolonged_inactivity"
+    
+    # Novas anomalias visuais/contextuais (Fase 4)
+    VISUAL_OVERLAY = "visual_overlay"           # Texto/logo sobreposto detectado
+    SCENE_INCONSISTENCY = "scene_inconsistency" # Objeto fora de contexto
+    SUDDEN_OBJECT_APPEAR = "sudden_object_appear"  # Objeto surge do nada
+    SILHOUETTE_ANOMALY = "silhouette_anomaly"   # Silhueta não-humana detectada como pessoa
 
 
 @dataclass
@@ -47,8 +54,8 @@ class PersonMetrics:
 
 class AnomalyDetector:
     """
-    Detector de anomalias comportamentais.
-    Analisa padrões de movimento, emoção e atividade para identificar comportamentos atípicos.
+    Detector de anomalias comportamentais e visuais.
+    Analisa padrões de movimento, emoção, atividade, objetos e overlays.
     """
     
     def __init__(
@@ -56,7 +63,11 @@ class AnomalyDetector:
         sudden_movement_threshold: float = 80.0,
         emotion_change_threshold: float = 0.5,
         inactivity_threshold: int = 90,  # frames
-        fps: float = 30.0
+        fps: float = 30.0,
+        # Novos parâmetros para anomalias visuais
+        require_persistence: int = 3,  # Frames para confirmar anomalia
+        enable_object_anomalies: bool = True,
+        enable_overlay_anomalies: bool = True
     ):
         """
         Inicializa o detector de anomalias.
@@ -66,11 +77,17 @@ class AnomalyDetector:
             emotion_change_threshold: Limiar de mudança emocional (0-1)
             inactivity_threshold: Frames de inatividade para considerar anomalia
             fps: Frames por segundo do vídeo
+            require_persistence: Frames consecutivos para confirmar uma anomalia (evita falsos positivos)
+            enable_object_anomalies: Habilita detecção de anomalias baseadas em objetos
+            enable_overlay_anomalies: Habilita detecção de overlays/texto
         """
         self.sudden_movement_threshold = sudden_movement_threshold
         self.emotion_change_threshold = emotion_change_threshold
         self.inactivity_threshold = inactivity_threshold
         self.fps = fps
+        self.require_persistence = require_persistence
+        self.enable_object_anomalies = enable_object_anomalies
+        self.enable_overlay_anomalies = enable_overlay_anomalies
         
         # Métricas por pessoa
         self.person_metrics: Dict[int, PersonMetrics] = {}
@@ -86,6 +103,9 @@ class AnomalyDetector:
         # Contadores
         self.frame_count = 0
         self.total_detections = 0
+        
+        # Cache de anomalias pendentes (para persistência temporal)
+        self._pending_anomalies: Dict[str, Dict] = {}  # key -> {count, data}
     
     def update(
         self,
@@ -366,10 +386,220 @@ class AnomalyDetector:
         self.person_metrics.clear()
         self.anomaly_history.clear()
         self.velocity_samples.clear()
+        self._pending_anomalies.clear()
         self.frame_count = 0
         self.total_detections = 0
         self.global_velocity_mean = 0.0
         self.global_velocity_std = 1.0
+    
+    # ========== NOVOS MÉTODOS PARA ANOMALIAS VISUAIS ==========
+    
+    def process_object_detections(
+        self,
+        frame_number: int,
+        object_detections: List
+    ) -> List[AnomalyEvent]:
+        """
+        Processa detecções de objetos e gera anomalias contextuais.
+        
+        Args:
+            frame_number: Número do frame atual
+            object_detections: Lista de ObjectDetection do ObjectDetector
+            
+        Returns:
+            Lista de anomalias relacionadas a objetos
+        """
+        if not self.enable_object_anomalies:
+            return []
+        
+        anomalies = []
+        
+        for obj_det in object_detections:
+            if obj_det.is_anomalous:
+                # Usa persistência temporal para evitar falsos positivos
+                anomaly_key = f"obj_{obj_det.class_name}_{obj_det.bbox[0]//50}_{obj_det.bbox[1]//50}"
+                
+                if self._confirm_anomaly(anomaly_key, {
+                    "type": AnomalyType.SCENE_INCONSISTENCY,
+                    "reason": obj_det.anomaly_reason,
+                    "bbox": obj_det.bbox,
+                    "class_name": obj_det.class_name
+                }):
+                    anomalies.append(AnomalyEvent(
+                        anomaly_type=AnomalyType.SCENE_INCONSISTENCY,
+                        timestamp=frame_number / self.fps,
+                        frame_number=frame_number,
+                        person_id=None,
+                        severity=0.6,
+                        description=obj_det.anomaly_reason or f"Objeto '{obj_det.class_name}' fora de contexto",
+                        bbox=obj_det.bbox,
+                        details={
+                            "object_class": obj_det.class_name,
+                            "category": obj_det.category.value,
+                            "confidence": obj_det.confidence
+                        }
+                    ))
+        
+        return anomalies
+    
+    def process_overlay_detections(
+        self,
+        frame_number: int,
+        overlay_detections: List
+    ) -> List[AnomalyEvent]:
+        """
+        Processa detecções de overlays/texto e gera anomalias.
+        
+        Args:
+            frame_number: Número do frame atual
+            overlay_detections: Lista de OverlayDetection do OverlayDetector
+            
+        Returns:
+            Lista de anomalias relacionadas a overlays
+        """
+        if not self.enable_overlay_anomalies:
+            return []
+        
+        anomalies = []
+        
+        for overlay in overlay_detections:
+            if overlay.is_anomalous:
+                # Usa persistência temporal para confirmar
+                anomaly_key = f"overlay_{overlay.overlay_type.value}_{overlay.position_zone}"
+                
+                if self._confirm_anomaly(anomaly_key, {
+                    "type": AnomalyType.VISUAL_OVERLAY,
+                    "reason": overlay.anomaly_reason,
+                    "text": overlay.text,
+                    "bbox": overlay.bbox
+                }):
+                    anomalies.append(AnomalyEvent(
+                        anomaly_type=AnomalyType.VISUAL_OVERLAY,
+                        timestamp=frame_number / self.fps,
+                        frame_number=frame_number,
+                        person_id=None,
+                        severity=0.5,
+                        description=overlay.anomaly_reason or f"Overlay detectado: '{overlay.text[:30]}...'",
+                        bbox=overlay.bbox,
+                        details={
+                            "overlay_type": overlay.overlay_type.value,
+                            "text": overlay.text[:100],
+                            "position": overlay.position_zone,
+                            "confidence": overlay.confidence
+                        }
+                    ))
+        
+        return anomalies
+    
+    def process_segment_validation(
+        self,
+        frame_number: int,
+        segment_results: List
+    ) -> List[AnomalyEvent]:
+        """
+        Processa validação de segmentação para detectar silhuetas anômalas.
+        
+        Args:
+            frame_number: Número do frame atual
+            segment_results: Lista de resultados de validação de segmentação
+            
+        Returns:
+            Lista de anomalias relacionadas a silhuetas
+        """
+        anomalies = []
+        
+        for result in segment_results:
+            if result.get("is_anomalous", False):
+                anomaly_key = f"segment_{result.get('person_id', 0)}"
+                
+                if self._confirm_anomaly(anomaly_key, result):
+                    anomalies.append(AnomalyEvent(
+                        anomaly_type=AnomalyType.SILHOUETTE_ANOMALY,
+                        timestamp=frame_number / self.fps,
+                        frame_number=frame_number,
+                        person_id=result.get("person_id"),
+                        severity=result.get("severity", 0.5),
+                        description=result.get("reason", "Silhueta anômala detectada"),
+                        bbox=result.get("bbox"),
+                        details=result
+                    ))
+        
+        return anomalies
+    
+    def _confirm_anomaly(self, key: str, data: Dict) -> bool:
+        """
+        Confirma uma anomalia após persistência temporal.
+        Evita falsos positivos exigindo detecção em múltiplos frames.
+        
+        Args:
+            key: Chave única para a anomalia
+            data: Dados da anomalia
+            
+        Returns:
+            True se a anomalia foi confirmada
+        """
+        if key not in self._pending_anomalies:
+            self._pending_anomalies[key] = {"count": 1, "data": data, "first_frame": self.frame_count}
+            return False
+        
+        self._pending_anomalies[key]["count"] += 1
+        
+        # Limpa pendências antigas (mais de 30 frames sem ver)
+        if self.frame_count - self._pending_anomalies[key].get("last_frame", self.frame_count) > 30:
+            self._pending_anomalies[key] = {"count": 1, "data": data, "first_frame": self.frame_count}
+            return False
+        
+        self._pending_anomalies[key]["last_frame"] = self.frame_count
+        
+        # Confirma se atingiu o threshold de persistência
+        if self._pending_anomalies[key]["count"] >= self.require_persistence:
+            # Remove do cache após confirmar
+            del self._pending_anomalies[key]
+            return True
+        
+        return False
+    
+    def update_extended(
+        self,
+        frame_number: int,
+        face_detections: List,
+        emotion_results: List,
+        activity_detections: List,
+        object_detections: Optional[List] = None,
+        overlay_detections: Optional[List] = None,
+        segment_results: Optional[List] = None
+    ) -> List[AnomalyEvent]:
+        """
+        Versão estendida do update que inclui anomalias visuais.
+        
+        Args:
+            frame_number: Número do frame atual
+            face_detections: Lista de detecções de rostos
+            emotion_results: Lista de resultados de análise emocional
+            activity_detections: Lista de atividades detectadas
+            object_detections: Lista de detecções de objetos (opcional)
+            overlay_detections: Lista de overlays detectados (opcional)
+            segment_results: Lista de resultados de segmentação (opcional)
+            
+        Returns:
+            Lista de todas as anomalias detectadas neste frame
+        """
+        # Processa anomalias comportamentais (método original)
+        anomalies = self.update(frame_number, face_detections, emotion_results, activity_detections)
+        
+        # Processa anomalias de objetos
+        if object_detections:
+            anomalies.extend(self.process_object_detections(frame_number, object_detections))
+        
+        # Processa anomalias de overlays
+        if overlay_detections:
+            anomalies.extend(self.process_overlay_detections(frame_number, overlay_detections))
+        
+        # Processa anomalias de segmentação
+        if segment_results:
+            anomalies.extend(self.process_segment_validation(frame_number, segment_results))
+        
+        return anomalies
 
 
 def draw_anomaly(

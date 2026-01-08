@@ -4,6 +4,8 @@
 
 Aplicação **GUI profissional** para análise de vídeo utilizando **PyQt6**, com reconhecimento facial, análise de expressões emocionais, detecção de atividades e identificação de anomalias comportamentais.
 
+**Versão 3.2.0** - Agora com **detecção avançada de anomalias** usando múltiplos modelos YOLO11!
+
 ## Funcionalidades
 
 | Funcionalidade | Descrição |
@@ -12,12 +14,17 @@ Aplicação **GUI profissional** para análise de vídeo utilizando **PyQt6**, c
 | **Análise de Emoções** | Classifica expressões faciais (feliz, triste, raiva, etc.) |
 | **Detecção de Atividades** | Identifica ações (caminhando, sentado, gesticulando, etc.) |
 | **Detecção de Anomalias** | Identifica comportamentos atípicos (movimentos bruscos, mudanças emocionais súbitas) |
+| **🔍 Detecção de Objetos** | Identifica objetos fora de contexto usando YOLO11 (NOVO v3.2.0) |
+| **📝 Detecção de Overlays** | OCR para watermarks, timestamps e textos sobrepostos (NOVO v3.2.0) |
+| **👤 Validação de Silhuetas** | YOLO11-seg valida formas humanas realistas (NOVO v3.2.0) |
 | **Geração de Relatório** | Cria resumo automático com estatísticas e insights |
 | **Interface GUI Profissional** | PyQt6 com visualização em tempo real, gráficos interativos e controles avançados |
+| **🎬 Preview em Tempo Real** | Visualize frames processados durante análise |
+| **⚙️ Configurações Avançadas** | Controle FPS, frame skip e qualidade do processamento |
 
 ## Arquitetura
 
-```
+```text
 TC-4/
 ├── gui_app.py              # Entry point - Interface gráfica
 ├── requirements.txt        # Dependências do projeto
@@ -28,7 +35,10 @@ TC-4/
 │   ├── face_detector.py    # Detector de rostos
 │   ├── emotion_analyzer.py # Analisador de emoções
 │   ├── activity_detector.py# Detector de atividades (YOLO11-pose)
-│   ├── anomaly_detector.py # Detector de anomalias
+│   ├── anomaly_detector.py # Detector de anomalias (comportamentais + visuais)
+│   ├── object_detector.py  # Detector de objetos YOLO11 (NOVO v3.2.0)
+│   ├── overlay_detector.py # Detector de overlays/OCR (NOVO v3.2.0)
+│   ├── segment_validator.py# Validador de silhuetas YOLO11-seg (NOVO v3.2.0)
 │   ├── visualizer.py       # Desenho de anotações nos frames
 │   ├── report_generator.py # Gerador de relatórios
 │   └── gui/                # Interface PyQt6
@@ -98,11 +108,82 @@ python gui_app.py
 ### Fluxo de Trabalho
 
 1. **Abrir Vídeo**: Menu Arquivo → Abrir Vídeo (ou Ctrl+O)
-2. **Processar**: Menu Processar → Iniciar (Player exibe progresso em tempo real)
-3. **Visualizar Resultados**: Gráficos e estatísticas atualizados automaticamente
-4. **Exportar**:
+2. **Configurar Processamento** (NOVO v3.1.0):
+   - Escolha preset de qualidade (Rápida/Balanceada/Alta)
+   - Ajuste Frame Skip (1-10) e FPS alvo (15/30/60)
+   - Habilite/desabilite preview em tempo real
+3. **Processar**: Menu Processar → Iniciar
+   - Preview exibe frames processados em tempo real
+   - Estatísticas atualizam dinamicamente
+4. **Visualizar Resultados**: Gráficos e estatísticas atualizados automaticamente
+5. **Exportar**:
    - Vídeo: Arquivo → Salvar Vídeo (Ctrl+S)
    - Relatório: Arquivo → Exportar Relatório (Ctrl+E)
+
+### Novas Funcionalidades (v3.1.0)
+
+#### **Preview em Tempo Real**
+
+- Visualize frames processados durante análise
+- Buffer circular de 30 frames
+- Taxa configurável (5, 10, 15 FPS)
+- Overlay com informações de processamento
+
+#### **Painel de Configurações**
+
+- **Frame Skip (1-10)**: Controla quantos frames são pulados
+- **FPS Alvo (15/30/60)**: Taxa de quadros do vídeo final
+- **Presets de Qualidade**:
+  - ⚡ Rápida: Skip=5, ideal para testes
+  - ⚖️ Balanceada: Skip=2, recomendado
+  - 💎 Alta: Skip=1, máxima precisão
+
+### Novas Funcionalidades (v3.2.0)
+
+#### **Detecção Avançada de Anomalias**
+
+O sistema agora utiliza múltiplos modelos YOLO11 para detectar anomalias visuais e contextuais:
+
+| Tipo de Anomalia | Descrição | Modelo |
+|------------------|-----------|--------|
+| `scene_inconsistency` | Objeto fora de contexto (ex: veículo em ambiente interno) | YOLO11n |
+| `sudden_object_appear` | Objeto surge subitamente sem contexto prévio | YOLO11n |
+| `visual_overlay` | Watermark, timestamp ou texto sobreposto detectado | OCR (pytesseract) |
+| `silhouette_anomaly` | Silhueta detectada não tem forma humana realista | YOLO11n-seg |
+
+#### **Novos Módulos**
+
+1. **ObjectDetector** (`src/object_detector.py`)
+   - Usa `yolo11n.pt` para detectar 80 classes COCO
+   - Categoriza objetos (eletrônicos, móveis, veículos, etc.)
+   - Identifica objetos fora de contexto automaticamente
+
+2. **OverlayDetector** (`src/overlay_detector.py`)
+   - OCR em regiões típicas de watermark (cantos)
+   - Detecta timestamps, logos e banners promocionais
+   - Requer `pytesseract` ou `easyocr` (opcionais)
+
+3. **SegmentValidator** (`src/segment_validator.py`)
+   - Usa `yolo11n-seg.pt` para segmentação de pessoas
+   - Valida aspect ratio, fill ratio e complexidade do contorno
+   - Cross-validation com detecção de pose
+
+#### **Instalação de Dependências Opcionais**
+
+Para habilitar detecção de overlays/texto:
+
+```bash
+# Opção 1: Pytesseract (mais leve)
+pip install pytesseract
+# + Instalar Tesseract OCR no sistema:
+# Ubuntu/Debian: sudo apt install tesseract-ocr tesseract-ocr-por
+# Fedora/RHEL: sudo dnf install tesseract tesseract-langpack-por
+
+# Opção 2: EasyOCR (mais preciso, usa GPU se disponível)
+pip install easyocr
+```
+
+📖 Veja [MELHORIAS_UI_UX.md](MELHORIAS_UI_UX.md) para documentação completa das novas funcionalidades.
 
 ### Funcionalidades da GUI
 

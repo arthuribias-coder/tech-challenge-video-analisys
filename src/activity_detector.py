@@ -14,13 +14,14 @@ from dataclasses import dataclass
 from collections import deque
 from enum import Enum
 
-from .config import ACTIVITY_CATEGORIES
+from .config import ACTIVITY_CATEGORIES, get_device, YOLO_MODEL_SIZE
 
 
 class ActivityType(Enum):
     """Tipos de atividades detectáveis."""
     STANDING = "standing"
     SITTING = "sitting"
+    LYING = "lying"  # Deitado
     WALKING = "walking"
     RUNNING = "running"
     WAVING = "waving"
@@ -70,13 +71,13 @@ class ActivityDetector:
     
     def __init__(
         self, 
-        model_size: str = "n",
+        model_size: str = None,
         min_confidence: float = 0.5,
         history_size: int = 10
     ):
         """
         Args:
-            model_size: Tamanho do modelo ('n', 's', 'm', 'l', 'x')
+            model_size: Tamanho do modelo ('n', 's', 'm', 'l', 'x'). None usa config.
             min_confidence: Confiança mínima para detecção
             history_size: Frames de histórico para análise temporal
         """
@@ -85,8 +86,9 @@ class ActivityDetector:
         self.person_counter = 0
         self.position_history: Dict[int, deque] = {}
         self.pose_history: Dict[int, deque] = {}
+        self.device = get_device()
         
-        self._init_yolo(model_size)
+        self._init_yolo(model_size or YOLO_MODEL_SIZE)
     
     def _init_yolo(self, model_size: str):
         """Inicializa YOLO11-pose (mais preciso que YOLOv8)."""
@@ -95,14 +97,16 @@ class ActivityDetector:
             # Usa YOLO11 (melhor precisão)
             model_name = f"yolo11{model_size}-pose.pt"
             self.model = YOLO(model_name)
+            self.model.to(self.device)
             self.model_loaded = True
-            print(f"[INFO] Modelo carregado: {model_name}")
+            print(f"[INFO] Modelo carregado: {model_name} (device: {self.device})")
         except Exception as e:
             print(f"[AVISO] YOLO11 não disponível, tentando YOLOv8: {e}")
             try:
                 from ultralytics import YOLO
                 model_name = f"yolov8{model_size}-pose.pt"
                 self.model = YOLO(model_name)
+                self.model.to(self.device)
                 self.model_loaded = True
             except Exception as e2:
                 print(f"[ERRO] Falha ao carregar modelo: {e2}")
@@ -248,32 +252,39 @@ class ActivityDetector:
         self.pose_history.setdefault(person_id, deque(maxlen=self.history_size))
         self.pose_history[person_id].append(keypoints)
         
-        # 1. Verifica braços levantados (ambos acima da cabeça)
-        if self._is_arms_raised(keypoints):
-            return ActivityType.ARMS_RAISED, 0.85
+        # Calcula velocidade uma vez
+        velocity = self._get_avg_velocity(person_id)
         
-        # 2. Verifica se está dançando (movimento rítmico + gestos)
-        if self._is_dancing(person_id, keypoints):
-            return ActivityType.DANCING, 0.8
+        # 1. Verifica postura deitada primeiro (alta prioridade)
+        if self._is_lying(keypoints):
+            return ActivityType.LYING, 0.85
         
-        # 3. Verifica gestos com braços
-        if self._is_waving(keypoints):
-            return ActivityType.WAVING, 0.8
-        
-        if self._is_pointing(keypoints):
-            return ActivityType.POINTING, 0.75
-        
-        # 4. Verifica agachado
+        # 2. Posturas estáticas verificadas ANTES de gestos (prioridade)
+        # Sentado/Agachado são mais comuns que gestos específicos
         if self._is_crouching(keypoints):
             return ActivityType.CROUCHING, 0.75
         
-        # 5. Verifica postura sentada (melhorada)
-        if self._is_sitting(keypoints):
+        if self._is_sitting(keypoints, velocity):
             return ActivityType.SITTING, 0.75
         
-        # 6. Verifica movimento pelas pernas e velocidade
-        velocity = self._get_avg_velocity(person_id)
+        # 3. Verifica braços levantados (ambos acima da cabeça)
+        if self._is_arms_raised(keypoints):
+            return ActivityType.ARMS_RAISED, 0.85
         
+        # 4. Gestos específicos de mãos (MAS NÃO se está parado)
+        # Evita confundir selfie/braço estendido com waving
+        if velocity > 5:  # Só considera gestos se houver movimento mínimo
+            if self._is_waving(keypoints):
+                return ActivityType.WAVING, 0.8
+            
+            if self._is_pointing(keypoints):
+                return ActivityType.POINTING, 0.75
+        
+        # 5. Dança (movimento rítmico)
+        if self._is_dancing(person_id, keypoints):
+            return ActivityType.DANCING, 0.8
+        
+        # 6. Verifica movimento geral pela velocidade
         if velocity > 80:
             return ActivityType.RUNNING, 0.8
         elif velocity > 25:
@@ -297,17 +308,32 @@ class ActivityDetector:
         return np.mean(velocities) if velocities else 0.0
     
     def _is_waving(self, kp: PoseKeypoints) -> bool:
-        """Detecta gesto de acenar (mão acima do ombro, cotovelo dobrado)."""
+        """Detecta gesto de acenar/cumprimentar (mão levantada, pessoa em pé)."""
+        # IMPORTANTE: Não detectar waving se pessoa parece estar deitada
+        # Verifica orientação do corpo primeiro
+        if kp.left_shoulder and kp.right_shoulder and kp.left_hip and kp.right_hip:
+            shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+            shoulder_x = (kp.left_shoulder[0] + kp.right_shoulder[0]) / 2
+            hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
+            hip_x = (kp.left_hip[0] + kp.right_hip[0]) / 2
+            
+            vertical_diff = abs(shoulder_y - hip_y)
+            horizontal_diff = abs(shoulder_x - hip_x)
+            
+            # Se corpo está mais horizontal que vertical, não é waving
+            if horizontal_diff > vertical_diff * 0.8:
+                return False
+        
         for wrist, elbow, shoulder in [
             (kp.left_wrist, kp.left_elbow, kp.left_shoulder),
             (kp.right_wrist, kp.right_elbow, kp.right_shoulder)
         ]:
             if all([wrist, elbow, shoulder]):
-                # Mão acima do ombro
-                if wrist[1] < shoulder[1] - 30:
-                    # Cotovelo dobrado (não braço reto)
+                # Mão SIGNIFICATIVAMENTE acima do ombro (critério mais rigoroso)
+                if wrist[1] < shoulder[1] - 40:
+                    # Aceita ângulo do cotovelo entre 40 e 160 graus
                     elbow_angle = self._calculate_angle(shoulder, elbow, wrist)
-                    if 45 < elbow_angle < 150:
+                    if 40 < elbow_angle < 160:
                         return True
         return False
     
@@ -328,9 +354,40 @@ class ActivityDetector:
                         return True
         return False
     
-    def _is_sitting(self, kp: PoseKeypoints) -> bool:
-        """Detecta postura sentada (análise melhorada de ângulos)."""
-        # Precisa de quadril e joelho
+    def _is_sitting(self, kp: PoseKeypoints, velocity: float = 0.0) -> bool:
+        """Detecta postura sentada (análise melhorada de ângulos e oclusão)."""
+        
+        # Se está muito parado (velocidade baixa), prioriza sitting sobre standing
+        # Cobre casos de selfie, trabalhando no computador, etc.
+        if velocity < 10:
+            # Verifica se tem torso visível (ombros + quadril)
+            if kp.left_shoulder and kp.right_shoulder:
+                # Caso 1: Tem quadril visível
+                if kp.left_hip or kp.right_hip:
+                    return True
+                # Caso 2: Não tem quadril (ocluído por mesa/câmera) MAS está parado
+                # Provavelmente sentado trabalhando/em videochamada
+                else:
+                    return True
+        
+        # 1. Fallback para "Sentado em mesa" (joelhos ocultos)
+        # Se não vemos joelhos, mas vemos tronco superior + estático
+        if not (kp.left_knee or kp.right_knee):
+             # Precisa ter ombros e quadril visíveis (torso)
+             if kp.left_shoulder and kp.right_shoulder and kp.left_hip and kp.right_hip:
+                 # Se estamos vendo quadril mas não joelhos, e a pessoa está parada 
+                 # (velocidade < 15), assumimos sentado (oclusão por mesa)
+                 if velocity < 15:
+                     return True
+             
+             # AJUSTE: Se nem sequer vemos o quadril (mesa alta/close-up), mas vemos ombros e rosto
+             # e está muito estático, provavelmente está sentado trabalhando/lendo.
+             # Evita classificar como "Standing" (padrão)
+             elif kp.left_shoulder and kp.right_shoulder:
+                 if velocity < 5: # Muito parado
+                     return True
+                     
+        # 2. Precisa de quadril e joelho para análise geométrica padrão
         if not all([kp.left_hip, kp.right_hip, kp.left_knee, kp.right_knee]):
             return False
         
@@ -373,6 +430,58 @@ class ActivityDetector:
         
         return False
     
+    def _is_lying(self, kp: PoseKeypoints) -> bool:
+        """
+        Detecta postura deitada com critérios rigorosos.
+        Requer múltiplas evidências para evitar falsos positivos.
+        """
+        # Precisa de ombros E quadril para análise confiável
+        if not (kp.left_shoulder and kp.right_shoulder):
+            return False
+        if not (kp.left_hip and kp.right_hip):
+            return False
+        
+        # Calcula centros
+        shoulder_center_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+        shoulder_center_x = (kp.left_shoulder[0] + kp.right_shoulder[0]) / 2
+        hip_center_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
+        hip_center_x = (kp.left_hip[0] + kp.right_hip[0]) / 2
+        
+        # Diferença vertical e horizontal entre ombros e quadril
+        vertical_diff = abs(shoulder_center_y - hip_center_y)
+        horizontal_diff = abs(shoulder_center_x - hip_center_x)
+        
+        # Distância entre ombros (largura visível do corpo)
+        shoulder_width = abs(kp.left_shoulder[0] - kp.right_shoulder[0])
+        
+        # CRITÉRIO PRINCIPAL: Corpo claramente mais horizontal que vertical
+        # Exige que horizontal seja pelo menos 2x maior que vertical
+        if horizontal_diff > vertical_diff * 2.0 and horizontal_diff > 100:
+            return True
+        
+        # CRITÉRIO SECUNDÁRIO: Pessoa de lado (ombros muito próximos em X)
+        # Mas APENAS se o torso também está horizontal
+        if shoulder_width < 40:
+            # Verifica se quadril também está alinhado horizontalmente
+            hip_width = abs(kp.left_hip[0] - kp.right_hip[0])
+            if hip_width < 40 and horizontal_diff > vertical_diff * 1.5:
+                return True
+        
+        # CRITÉRIO COM TORNOZELOS: Verificação completa do corpo
+        if kp.left_ankle and kp.right_ankle:
+            ankle_center_y = (kp.left_ankle[1] + kp.right_ankle[1]) / 2
+            ankle_center_x = (kp.left_ankle[0] + kp.right_ankle[0]) / 2
+            
+            # Distância total ombro->tornozelo
+            total_vertical = abs(shoulder_center_y - ankle_center_y)
+            total_horizontal = abs(shoulder_center_x - ankle_center_x)
+            
+            # Corpo inteiro claramente horizontal (2x mais largo que alto)
+            if total_horizontal > total_vertical * 2.0 and total_horizontal > 150:
+                return True
+        
+        return False
+    
     def _is_arms_raised(self, kp: PoseKeypoints) -> bool:
         """Detecta ambos os braços levantados acima da cabeça."""
         if not all([kp.left_wrist, kp.right_wrist, kp.nose]):
@@ -387,29 +496,44 @@ class ActivityDetector:
     def _is_dancing(self, person_id: int, kp: PoseKeypoints) -> bool:
         """Detecta dança baseada em movimento rítmico e variação de pose."""
         history = self.pose_history.get(person_id)
-        if not history or len(history) < 5:
+        if not history or len(history) < 8:  # Requer mais histórico (era 5)
             return False
+            
+        # Requer wrists (pulsos) visíveis e idealmente acima da cintura
+        if not (kp.left_wrist and kp.right_wrist and kp.left_hip and kp.right_hip):
+            return False
+            
+        hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
+        # Bailarinas geralmente mantêm braços mais altos (pelo menos na altura do quadril)
+        if kp.left_wrist[1] > hip_y + 20 or kp.right_wrist[1] > hip_y + 20:
+             # Se pulsos estão muito baixos (abaixo do quadril), provavel caminhada/parado
+             return False
         
         # Calcula variação de posição dos braços ao longo do tempo
         wrist_variations = []
-        for prev_kp in list(history)[-5:]:
-            if prev_kp.left_wrist and kp.left_wrist:
-                dx = abs(prev_kp.left_wrist[0] - kp.left_wrist[0])
-                dy = abs(prev_kp.left_wrist[1] - kp.left_wrist[1])
+        # Analisa uma janela maior
+        for i in range(len(history) - 5, len(history)):
+             prev_kp = history[i-1]
+             curr_kp = history[i]
+             
+             if prev_kp.left_wrist and curr_kp.left_wrist:
+                dx = abs(prev_kp.left_wrist[0] - curr_kp.left_wrist[0])
+                dy = abs(prev_kp.left_wrist[1] - curr_kp.left_wrist[1])
                 wrist_variations.append(dx + dy)
-            if prev_kp.right_wrist and kp.right_wrist:
-                dx = abs(prev_kp.right_wrist[0] - kp.right_wrist[0])
-                dy = abs(prev_kp.right_wrist[1] - kp.right_wrist[1])
+             if prev_kp.right_wrist and curr_kp.right_wrist:
+                dx = abs(prev_kp.right_wrist[0] - curr_kp.right_wrist[0])
+                dy = abs(prev_kp.right_wrist[1] - curr_kp.right_wrist[1])
                 wrist_variations.append(dx + dy)
         
         # Se há movimento constante dos braços = possível dança
         if wrist_variations:
             avg_variation = np.mean(wrist_variations)
-            # Movimento moderado (não parado, não muito rápido)
-            if 15 < avg_variation < 80:
-                # Verifica se torso também se move
+            # Threshold aumentado (era 15) para evitar detectar gesticulação normal como dança
+            if 30 < avg_variation < 120:
+                # Verifica se torso também se move, mas não corre
                 velocity = self._get_avg_velocity(person_id)
-                if 5 < velocity < 40:
+                # Velocidade mínima aumentada (era 5) para evitar dança parada
+                if 10 < velocity < 60:
                     return True
         
         return False

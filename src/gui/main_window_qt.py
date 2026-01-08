@@ -6,13 +6,13 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMenuBar, QMenu, QStatusBar, QProgressBar,
     QFileDialog, QMessageBox, QLabel, QSpinBox,
-    QPushButton, QToolBar, QSizePolicy
+    QPushButton, QToolBar, QSizePolicy, QSplitter, QScrollArea
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QAction, QIcon, QFontDatabase
 from pathlib import Path
 
-from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt
+from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt, SettingsDialog
 from .threads import ProcessorThreadQt
 from .icon_provider import IconProvider
 from ..config import OUTPUT_DIR
@@ -24,12 +24,21 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Tech Challenge - Fase 4: Análise de Vídeo com IA")
-        self.resize(1400, 900)
+        self.resize(1600, 950)
+        self.setMinimumSize(1200, 700)
         
         # Estado
         self.video_path = None
         self.output_path = None
         self.processor_thread = None
+        
+        # Configurações de processamento padrão
+        self.processing_settings = {
+            'frame_skip': 2,
+            'target_fps': 30,
+            'enable_preview': True,
+            'preview_fps': 10
+        }
         
         # Aplica estilo dark
         self.setStyleSheet("""
@@ -39,6 +48,39 @@ class MainWindow(QMainWindow):
             QWidget {
                 background-color: #1e1e1e;
                 color: #e0e0e0;
+            }
+            QScrollArea {
+                border: none;
+                background-color: #1e1e1e;
+            }
+            QScrollBar:vertical {
+                background-color: #2d2d2d;
+                width: 12px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #555;
+                min-height: 20px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #666;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QSplitter::handle {
+                background-color: #3d3d3d;
+                margin: 2px;
+            }
+            QSplitter::handle:horizontal {
+                width: 4px;
+            }
+            QSplitter::handle:vertical {
+                height: 4px;
+            }
+            QSplitter::handle:hover {
+                background-color: #4CAF50;
             }
             QMenuBar {
                 background-color: #2d2d2d;
@@ -92,24 +134,42 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         
         main_layout = QVBoxLayout(central)
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(5)
+        main_layout.setContentsMargins(5, 5, 5, 5)
         
-        # Top: Video + Stats
-        top_layout = QHBoxLayout()
-        top_layout.setSpacing(10)
+        # Splitter principal vertical (top/bottom)
+        main_splitter = QSplitter(Qt.Orientation.Vertical)
         
+        # Top: Splitter horizontal (video / stats)
+        top_splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # Video Player
         self.video_player = VideoPlayerQt()
-        top_layout.addWidget(self.video_player, stretch=7)
+        self.video_player.setMinimumWidth(400)
+        top_splitter.addWidget(self.video_player)
         
+        # Stats Panel (agora ocupa todo o lado direito)
         self.stats_panel = StatsPanelQt()
-        top_layout.addWidget(self.stats_panel, stretch=3)
+        self.stats_panel.setMinimumWidth(350)
+        self.stats_panel.setMinimumHeight(300)
+        top_splitter.addWidget(self.stats_panel)
         
-        main_layout.addLayout(top_layout, stretch=7)
+        # Define proporções iniciais do splitter horizontal
+        top_splitter.setStretchFactor(0, 6)  # Video
+        top_splitter.setStretchFactor(1, 4)  # Stats
         
-        # Bottom: Charts
+        main_splitter.addWidget(top_splitter)
+        
+        # Bottom: Charts Panel
         self.charts_panel = ChartsPanelQt()
-        main_layout.addWidget(self.charts_panel, stretch=3)
+        self.charts_panel.setMinimumHeight(200)
+        main_splitter.addWidget(self.charts_panel)
+        
+        # Define proporções iniciais do splitter vertical
+        main_splitter.setStretchFactor(0, 6)  # Top
+        main_splitter.setStretchFactor(1, 4)  # Charts
+        
+        main_layout.addWidget(main_splitter)
     
     def _setup_toolbar(self):
         """Cria toolbar com botões."""
@@ -152,6 +212,15 @@ class MainWindow(QMainWindow):
         open_action.setToolTip("Abrir vídeo para análise (Ctrl+O)")
         open_action.triggered.connect(self._open_video)
         toolbar.addAction(open_action)
+        
+        toolbar.addSeparator()
+        
+        # Botão Configurações
+        settings_action = QAction("Configuracoes", self)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.setToolTip("Configurar processamento (Ctrl+,)")
+        settings_action.triggered.connect(self._open_settings)
+        toolbar.addAction(settings_action)
         
         toolbar.addSeparator()
         
@@ -240,8 +309,20 @@ class MainWindow(QMainWindow):
                 self.stats_panel.reset()
                 self.charts_panel.clear_data()
             else:
-                QMessageBox.critical(self, "Erro", "Não foi possível carregar o vídeo!")
+                QMessageBox.critical(self, "Erro", "Não foi possível carregar o vídeo!")    
+    def _open_settings(self):
+        """Abre dialog de configurações."""
+        dialog = SettingsDialog(self, self.processing_settings)
+        dialog.settings_applied.connect(self._on_settings_changed)
+        dialog.exec()
     
+    def _on_settings_changed(self, settings):
+        """Callback quando configurações são alteradas."""
+        self.processing_settings = settings
+        self.status_label.setText(
+            f"Configuracoes atualizadas: Skip={settings['frame_skip']}, "
+            f"FPS={settings['target_fps']}, Preview={'ON' if settings['enable_preview'] else 'OFF'}"
+        )    
     def _start_processing(self):
         """Inicia processamento."""
         if not self.video_path:
@@ -255,16 +336,36 @@ class MainWindow(QMainWindow):
         OUTPUT_DIR.mkdir(exist_ok=True)
         self.output_path = OUTPUT_DIR / f"analisado_{self.video_path.name}"
         
+        # Usa configuracoes armazenadas
+        settings = self.processing_settings
+        
         self.processor_thread = ProcessorThreadQt(
             str(self.video_path),
             str(self.output_path),
-            frame_skip=2
+            frame_skip=settings['frame_skip'],
+            target_fps=settings['target_fps'],
+            enable_preview=settings['enable_preview'],
+            preview_fps=settings['preview_fps'],
+            # Detectores avançados
+            enable_object_detection=settings.get('enable_object_detection'),
+            enable_overlay_detection=settings.get('enable_overlay_detection'),
+            enable_segment_validation=settings.get('enable_segment_validation'),
+            # Configurações de hardware
+            use_gpu=settings.get('use_gpu'),
+            model_size=settings.get('model_size')
         )
         
         # Conecta signals
         self.processor_thread.progress.connect(self._on_progress)
         self.processor_thread.finished_signal.connect(self._on_complete)
         self.processor_thread.error.connect(self._on_error)
+        self.processor_thread.frame_processed.connect(self._on_frame_processed)
+        
+        # Ativa modo preview no player se habilitado
+        if settings['enable_preview']:
+            # Passa total de frames para o slider funcionar durante preview
+            total_frames = self.video_player.total_frames if self.video_player.total_frames > 0 else 0
+            self.video_player.enable_preview_mode(settings['preview_fps'], total_frames)
         
         self.processor_thread.start()
         
@@ -272,7 +373,7 @@ class MainWindow(QMainWindow):
         self.start_action.setEnabled(False)
         self.pause_action.setEnabled(True)
         self.stop_action.setEnabled(True)
-        self.status_label.setText("Processando vídeo...")
+        self.status_label.setText("Processando video...")
         self.progress_bar.setValue(0)
     
     def _pause_processing(self):
@@ -291,6 +392,9 @@ class MainWindow(QMainWindow):
         if self.processor_thread:
             self.processor_thread.stop()
             self.processor_thread.wait()
+            
+            # Desativa preview
+            self.video_player.disable_preview_mode()
             
             # Atualiza UI
             self.start_action.setEnabled(True)
@@ -379,9 +483,11 @@ class MainWindow(QMainWindow):
         self.charts_panel.update_data(stats)
         self.last_stats = stats
         
-        # Carrega vídeo processado
+        # Desativa preview e carrega vídeo processado
+        self.video_player.disable_preview_mode()
         if self.output_path.exists():
             self.video_player.load_video(str(self.output_path))
+            self.video_player.switch_to_playback_mode()
         
         # Atualiza UI
         self.start_action.setEnabled(True)
@@ -401,12 +507,20 @@ class MainWindow(QMainWindow):
         """Callback de erro."""
         self.status_label.setText(f"Erro: {error_msg}")
         
+        # Desativa preview
+        self.video_player.disable_preview_mode()
+        
         # Atualiza UI
         self.start_action.setEnabled(True)
         self.pause_action.setEnabled(False)
         self.stop_action.setEnabled(False)
         
         QMessageBox.critical(self, "Erro no Processamento", error_msg)
+    
+    def _on_frame_processed(self, frame_idx, frame, metadata):
+        """Callback para frame processado (preview em tempo real)."""
+        # Adiciona frame ao buffer de preview do player
+        self.video_player.add_preview_frame(frame_idx, frame)
     
     def closeEvent(self, event):
         """Handler de fechamento."""
