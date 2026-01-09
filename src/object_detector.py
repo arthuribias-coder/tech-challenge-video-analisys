@@ -191,7 +191,8 @@ class ObjectDetector:
             frame, 
             verbose=False, 
             conf=self.min_confidence,
-            classes=list(self.classes_of_interest)
+            classes=list(self.classes_of_interest),
+            device=self.device
         )
         
         detections = []

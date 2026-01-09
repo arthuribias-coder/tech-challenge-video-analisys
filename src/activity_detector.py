@@ -78,20 +78,22 @@ class ActivityDetector:
         self, 
         model_size: str = None,
         min_confidence: float = 0.5,
-        history_size: int = 10
+        history_size: int = 10,
+        device: Optional[str] = None
     ):
         """
         Args:
             model_size: Tamanho do modelo ('n', 's', 'm', 'l', 'x'). None usa config.
             min_confidence: Confiança mínima para detecção
             history_size: Frames de histórico para análise temporal
+            device: Device para inferência ('cuda', 'cpu' ou None para auto)
         """
         self.min_confidence = min_confidence
         self.history_size = history_size
         self.person_counter = 0
         self.position_history: Dict[int, deque] = {}
         self.pose_history: Dict[int, deque] = {}
-        self.device = get_device()
+        self.device = device if device is not None else get_device()
         
         self._init_yolo(model_size or YOLO_MODEL_SIZE)
     
@@ -130,7 +132,7 @@ class ActivityDetector:
         if not self.model_loaded:
             return []
         
-        results = self.model(frame, verbose=False, conf=self.min_confidence)
+        results = self.model(frame, verbose=False, conf=self.min_confidence, device=self.device)
         detections = []
         
         for result in results:

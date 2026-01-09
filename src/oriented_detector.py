@@ -5,6 +5,7 @@ Crucial para diferenciar pessoas deitadas vs em pé com precisão, independente 
 """
 
 import cv2
+import logging
 import numpy as np
 import torch
 import math
@@ -12,6 +13,8 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from ultralytics import YOLO
 from .config import get_device
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class OrientedDetection:
@@ -68,8 +71,15 @@ class OrientedDetection:
 class OrientedDetector:
     """Detector de objetos orientados (OBB) usando YOLO11-obb."""
     
-    def __init__(self, model_size: str = "n", conf_threshold: float = 0.4):
-        self.device = get_device()
+    def __init__(self, model_size: str = "n", conf_threshold: float = 0.4, device: Optional[str] = None):
+        """
+        Inicializa o detector orientado.
+        Args:
+            model_size: Tamanho do modelo (n, s, m, l)
+            conf_threshold: Confiança mínima para detecção
+            device: Device para inferência ('cuda', 'cpu' ou None para auto)
+        """
+        self.device = device if device is not None else get_device()
         self.conf_threshold = conf_threshold
         
         model_path = f"yolo11{model_size}-obb.pt"

@@ -29,14 +29,16 @@ class SceneContext:
 class SceneClassifier:
     """Classificador de cenas usando YOLO11-cls."""
     
-    def __init__(self, model_size: str = "n", conf_threshold: float = 0.2):
+    def __init__(self, model_size: str = "n", conf_threshold: float = 0.2, device: Optional[str] = None):
         """
         Inicializa o classificador de cenas.
         
         Args:
             model_size: Tamanho do modelo ('n', 's', 'm', 'l')
+            conf_threshold: Threshold de confiança
+            device: Device para inferência ('cuda', 'cpu' ou None para auto)
         """
-        self.device = get_device()
+        self.device = device if device is not None else get_device()
         self.conf_threshold = conf_threshold
         
         # Carrega modelo

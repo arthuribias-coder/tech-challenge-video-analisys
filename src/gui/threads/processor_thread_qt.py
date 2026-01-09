@@ -119,7 +119,7 @@ class ProcessorThreadQt(QThread):
             # Inicializa componentes principais
             face_detector = FaceDetector()
             emotion_analyzer = EmotionAnalyzer()
-            activity_detector = ActivityDetector(model_size=model_size)
+            activity_detector = ActivityDetector(model_size=model_size, device=device)
             anomaly_detector = AnomalyDetector(
                 enable_object_anomalies=self.enable_object_detection,
                 enable_overlay_anomalies=False # Overlay detector foi removido
@@ -130,7 +130,7 @@ class ProcessorThreadQt(QThread):
             
             if self.enable_object_detection:
                 try:
-                    object_detector = ObjectDetector(model_size=model_size, min_confidence=0.5)
+                    object_detector = ObjectDetector(model_size=model_size, min_confidence=0.5, device=device)
                     logger.info("ObjectDetector habilitado")
                 except Exception as e:
                     logger.warning(f"ObjectDetector falhou: {e}")
@@ -141,14 +141,14 @@ class ProcessorThreadQt(QThread):
             oriented_detector = None
 
             try:
-                scene_classifier = SceneClassifier(model_size=model_size)
+                scene_classifier = SceneClassifier(model_size=model_size, device=device)
                 logger.info("SceneClassifier habilitado")
             except Exception as e:
                 logger.warning(f"SceneClassifier falhou: {e}")
             
             if ORIENTED_DETECTOR_AVAILABLE:
                 try:
-                    oriented_detector = OrientedDetector(model_size=model_size)
+                    oriented_detector = OrientedDetector(model_size=model_size, device=device)
                     logger.info("OrientedDetector habilitado")
                 except Exception as e:
                     logger.warning(f"OrientedDetector falhou: {e}")
