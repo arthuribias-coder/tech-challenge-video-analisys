@@ -6,11 +6,14 @@ Detecta objetos que podem indicar anomalias visuais ou contextuais.
 
 import cv2
 import numpy as np
+import logging
 from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass
 from enum import Enum
 
 from .config import get_device, YOLO_MODEL_SIZE
+
+logger = logging.getLogger(__name__)
 
 
 class ObjectCategory(Enum):
@@ -159,9 +162,9 @@ class ObjectDetector:
             self.model = YOLO(model_name)
             self.model.to(self.device)
             self.model_loaded = True
-            print(f"[INFO] ObjectDetector carregado: {model_name} (device: {self.device})")
+            logger.info(f"ObjectDetector carregado: {model_name} (device: {self.device})")
         except Exception as e:
-            print(f"[AVISO] Falha ao carregar ObjectDetector: {e}")
+            logger.error(f"Falha ao carregar ObjectDetector: {e}")
             self.model = None
             self.model_loaded = False
     

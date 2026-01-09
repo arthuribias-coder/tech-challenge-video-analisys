@@ -73,7 +73,7 @@ class OrientedDetector:
         self.conf_threshold = conf_threshold
         
         model_path = f"yolo11{model_size}-obb.pt"
-        print(f"[INFO] Carregando OrientedDetector: {model_path} ({self.device})")
+        logger.info(f"Carregando OrientedDetector: {model_path} ({self.device})")
         self.model = YOLO(model_path)
         
     def detect(self, frame: np.ndarray) -> List[OrientedDetection]:

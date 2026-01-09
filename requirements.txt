@@ -1,28 +1,27 @@
 # Tech Challenge Fase 4 - Dependências
 # Python 3.12+
 
-# Core - Visão Computacional
+# --- Core ---
 opencv-python>=4.8.0
 numpy>=1.26.0
 Pillow>=10.0.0
 
-# Análise de Emoções (DeepFace)
+# --- IA & Análise ---
+# DeepFace para emoções (requer tensorflow ou torch backend)
 deepface>=0.0.96
 scipy>=1.11.0
 
-# Detecção de Atividades (YOLO11-pose)
+# YOLO11 (Ultralytics) para Poses, Objetos, OBB e Classificação
 ultralytics>=8.3.0
 
-# Interface Gráfica - PyQt6
+# --- Interface Gráfica ---
 PyQt6>=6.6.0
 PyQt6-Charts>=6.6.0
 matplotlib>=3.8.0
 
-# ===== ACELERAÇÃO GPU (OPCIONAL) =====
-# Para habilitar GPU (NVIDIA CUDA), descomente e instale manualmente:
-#
-# PyTorch com CUDA (para YOLO11):
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-#
-# TensorFlow com CUDA (para DeepFace):
-#   pip install tensorflow[and-cuda]
+# --- Utilitários ---
+# (Nenhum extra necessário, json/pathlib são nativos)
+
+# --- Opcionais / Hardware ---
+# Para GPU NVIDIA:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121

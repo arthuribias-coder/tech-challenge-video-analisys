@@ -5,6 +5,7 @@ Usa YOLOv8-pose para detecção de pessoas e análise de poses/atividades.
 
 import cv2
 import numpy as np
+import logging
 
 # Importa torch após numpy para evitar bug de compatibilidade
 import torch
@@ -16,6 +17,8 @@ from enum import Enum
 
 from .config import (ACTIVITY_CATEGORIES, get_device, YOLO_MODEL_SIZE,
                        ACTIVITY_POSE_THRESHOLDS)
+
+logger = logging.getLogger(__name__)
 
 
 class ActivityType(Enum):
@@ -101,17 +104,18 @@ class ActivityDetector:
             self.model = YOLO(model_name)
             self.model.to(self.device)
             self.model_loaded = True
-            print(f"[INFO] Modelo carregado: {model_name} (device: {self.device})")
+            logger.info(f"Modelo carregado: {model_name} (device: {self.device})")
         except Exception as e:
-            print(f"[AVISO] YOLO11 não disponível, tentando YOLOv8: {e}")
+            logger.warning(f"YOLO11 não disponível, tentando YOLOv8: {e}")
             try:
                 from ultralytics import YOLO
                 model_name = f"yolov8{model_size}-pose.pt"
                 self.model = YOLO(model_name)
                 self.model.to(self.device)
                 self.model_loaded = True
+                logger.info(f"Modelo carregado: {model_name} (device: {self.device})")
             except Exception as e2:
-                print(f"[ERRO] Falha ao carregar modelo: {e2}")
+                logger.error(f"Falha ao carregar modelo: {e2}")
                 self.model = None
                 self.model_loaded = False
     
@@ -217,8 +221,13 @@ class ActivityDetector:
                 # Distância entre pulsos
                 wrist_dist = np.sqrt((rw1[0] - rw2[0])**2 + (rw1[1] - rw2[1])**2)
                 
+                # Usa limiares configuráveis
+                max_wrist_dist = ACTIVITY_POSE_THRESHOLDS.get("greeting_wrist_distance_max", 60)
+                min_shoulder_dist = ACTIVITY_POSE_THRESHOLDS.get("greeting_shoulder_distance_min", 150)
+                max_wrist_height_diff = ACTIVITY_POSE_THRESHOLDS.get("greeting_wrist_height_diff_max", 50)
+                
                 # Se pulsos estão muito próximos (< 60px)
-                if wrist_dist >= 60:
+                if wrist_dist >= max_wrist_dist:
                     continue
                 
                 # Verifica também a distância dos ombros para garantir que são pessoas diferentes
@@ -230,11 +239,11 @@ class ActivityDetector:
                 
                 shoulder_dist = np.sqrt((s1[0] - s2[0])**2 + (s1[1] - s2[1])**2)
                 
-                # Pulsos muito próximos (<60px) mas corpos separados (>150px)
-                # E pulsos devem estar aproximadamente na mesma ALTURA (variação < 50px)
+                # Pulsos muito próximos mas corpos separados
+                # E pulsos devem estar aproximadamente na mesma ALTURA
                 wrist_height_diff = abs(rw1[1] - rw2[1])
                 
-                if wrist_dist < 60 and shoulder_dist > 150 and wrist_height_diff < 50:
+                if wrist_dist < max_wrist_dist and shoulder_dist > min_shoulder_dist and wrist_height_diff < max_wrist_height_diff:
                     # Verifica se os pulsos estão entre os dois corpos (região central)
                     # Isso evita detectar toques laterais como cumprimento
                     mid_x = (s1[0] + s2[0]) / 2
@@ -385,15 +394,25 @@ class ActivityDetector:
         if self._is_lying(keypoints):
             return ActivityType.LYING, 0.85
         
-        # 2. MOVIMENTO tem prioridade sobre postura estática
-        # Se a pessoa está se movendo, NÃO pode estar sentada
+        # 2. MOVIMENTO 
+        # Se velocity > running -> RUNNING
         running_threshold = ACTIVITY_POSE_THRESHOLDS["running_velocity_threshold"]
         walking_threshold = ACTIVITY_POSE_THRESHOLDS["walking_velocity_threshold"]
         
         if velocity > running_threshold:
             return ActivityType.RUNNING, 0.85
-        elif velocity > walking_threshold:
-            return ActivityType.WALKING, 0.8
+        
+        # Se velocity > walking, verifica pose antes de classificar
+        if velocity > walking_threshold:
+            # Se a pessoa está CLARAMENTE EM PÉ (pernas retas, vertical) e velocidade não é de corrida,
+            # pode ser apenas movimento de câmera. Prioriza STANDING sobre WALKING em limiares baixos.
+            is_standing_clear = self._is_clearly_standing(keypoints)
+            if is_standing_clear and velocity < running_threshold * 0.8:
+                # Retorna STANDING com confiança menor (incerteza devido à velocidade)
+                # O detector seguirá para o bloco de STANDING abaixo
+                pass
+            else:
+                return ActivityType.WALKING, 0.8
         
         # 3. Verifica SENTADO primeiro (prioridade para pernas ocultas + parado)
         # Isso captura pessoas em mesas de café/escritório
@@ -800,19 +819,24 @@ class ActivityDetector:
         shoulder_width = abs(kp.left_shoulder[0] - kp.right_shoulder[0])
         
         # === CRITÉRIO PRINCIPAL ===
-        # Torso claramente horizontal: horizontal > 2x vertical E distância significativa
-        if horizontal_diff > vertical_diff * 2.0 and horizontal_diff > 100:
+        # Torso claramente horizontal: horizontal > X * vertical E distância significativa
+        lying_ratio = ACTIVITY_POSE_THRESHOLDS.get("lying_horizontal_ratio", 2.0)
+        lying_min_dist = ACTIVITY_POSE_THRESHOLDS.get("lying_min_horizontal_dist", 100)
+        
+        if horizontal_diff > vertical_diff * lying_ratio and horizontal_diff > lying_min_dist:
             # Confirma com face horizontal (se disponível)
             face_is_horizontal = self._is_face_horizontal(kp)
             if face_is_horizontal:
                 return True
-            # Se não temos dados de face, aceita apenas se torso é MUITO horizontal
-            if horizontal_diff > vertical_diff * 3.0:
+            # Se não temos dados de face, aceita apenas se torso é MUITO horizontal (margem de segurança + 1.0)
+            if horizontal_diff > vertical_diff * (lying_ratio + 1.0):
                 return True
         
         # === CRITÉRIO SECUNDÁRIO: Pessoa de lado ===
         # Ombros muito próximos em X (visto de lado) + torso horizontal
-        if shoulder_width < 40:
+        shoulder_width_thresh = ACTIVITY_POSE_THRESHOLDS.get("lying_shoulder_width_threshold", 40)
+        
+        if shoulder_width < shoulder_width_thresh:
             hip_width = abs(kp.left_hip[0] - kp.right_hip[0])
             if hip_width < 40 and horizontal_diff > vertical_diff * 1.5:
                 # Pessoa de lado: precisa confirmar com face ou torso muito horizontal

@@ -18,8 +18,133 @@ O objetivo principal é processar vídeos de vigilância ou monitoramento para i
   * Picos de emoção negativa.
   * Inatividade prolongada.
   * Inconsistências de cena (objetos proibidos).
-* **Interface Gráfica Profissional**: Desenvolvida em **PyQt6**, com player de vídeo, gráficos em tempo real (PyQtCharts) e painéis de estatísticas.
-* **Relatórios Automáticos**: Geração de relatórios em TXT com resumo das ocorrências.
+  * Pessoas deitadas em locais inapropriados.
+* **Interface Gráfica Profissional (GUI)**: Desenvolvida em **PyQt6**, com:
+  * Player de vídeo integrado com controles
+  * Preview em tempo real durante processamento
+  * Gráficos estatísticos (emoções, atividades, anomalias, objetos)
+  * Painel de estatísticas ao vivo
+  * Configurações avançadas editáveis via JSON
+  * Modo debug para análise detalhada
+* **Interface de Linha de Comando (CLI)**: Processamento em lote sem interface gráfica
+* **Relatórios Automáticos**: Geração de relatórios em TXT com resumo completo das ocorrências
+
+## ⚙️ Modos de Uso
+
+### 1. Interface Gráfica (GUI) - Recomendado
+
+A GUI oferece controle completo sobre o processamento com visualização em tempo real:
+
+```bash
+python gui_app.py
+```
+
+**Recursos da GUI:**
+
+* Seleção de vídeo via diálogo
+* Configuração de processamento (frame skip, FPS, GPU, modelos)
+* Preview em tempo real (opcional, configurável)
+* Visualização de estatísticas durante processamento
+* Gráficos interativos por categoria
+* Player de vídeo com controles de reprodução
+* Modo debug com checkbox (ativa logs detalhados no console)
+* Exportação de vídeo processado e relatório
+
+### 2. Interface de Linha de Comando (CLI)
+
+Para processamento automatizado ou em servidores sem interface gráfica:
+
+```bash
+# Uso básico
+python cli.py input/video.mp4
+
+# Com debug ativado
+python cli.py input/video.mp4 --debug
+
+# Forçando CPU (sem GPU)
+python cli.py input/video.mp4 --no-gpu
+
+# Especificando arquivo de saída
+python cli.py input/video.mp4 --output output/resultado.mp4
+
+# Com arquivo de configuração customizado
+python cli.py input/video.mp4 --config config/custom.json
+```
+
+**Parâmetros CLI:**
+
+* `video`: Caminho do arquivo de vídeo (obrigatório)
+* `--config`: Arquivo JSON de configuração customizada (opcional)
+* `--debug`: Habilita logs detalhados no console
+* `--output`: Caminho de saída para vídeo processado
+* `--no-gpu`: Força uso de CPU ao invés de GPU
+
+## ⚙️ Configuração e Ajustes
+
+### Configurações via GUI
+
+1. Clique no botão **"Configurações"** (ícone de engrenagem) na toolbar
+2. Ajuste os parâmetros básicos:
+   * **Frame Skip**: Processa 1 a cada N frames (↑ = mais rápido, ↓ qualidade)
+   * **FPS de Saída**: Taxa de frames do vídeo processado (15, 24, 30, 60)
+   * **Preview**: Habilita visualização em tempo real durante processamento
+   * **FPS do Preview**: Controla quantos frames/segundo aparecem no preview (5-30)
+   * **GPU/CPU**: Escolha o dispositivo de processamento
+   * **Tamanho do Modelo**: nano (n), small (s), medium (m), large (l)
+   * **Detecção de Objetos**: Habilita/desabilita análise de objetos
+
+3. Para configurações avançadas, clique em **"Avançado..."**:
+   * Edite limiares de emoções (sensibilidade por emoção)
+   * Ajuste parâmetros de poses (ângulos, distâncias)
+   * Configure pesos contextuais de emoção por tipo de cena
+   * As alterações são salvas em `config/settings.json`
+
+### Configurações via Arquivo JSON
+
+Edite diretamente `config/settings.json`:
+
+```json
+{
+  "frame_skip": 2,
+  "target_fps": 30,
+  "enable_preview": true,
+  "preview_fps": 10,
+  "use_gpu": true,
+  "model_size": "n",
+  "enable_object_detection": true,
+  "EMOTION_THRESHOLDS": {
+    "neutral": 0.25,
+    "sad": 0.60,
+    "happy": 0.35,
+    "surprise": 0.50,
+    "fear": 0.70,
+    "angry": 0.50,
+    "disgust": 0.55
+  }
+}
+```
+
+### Modo Debug
+
+Ative o checkbox **"Debug"** na toolbar para:
+
+* Ver logs detalhados no console/terminal
+* Acompanhar decisões dos detectores em tempo real
+* Identificar problemas de detecção
+* Analisar performance frame a frame
+
+### Requisitos de Hardware (GPU)
+
+Para performance em tempo real, **recomenda-se fortemente o uso de GPU NVIDIA (CUDA)**.
+
+* O sistema detecta automaticamente se `cuda` está disponível.
+* Você pode forçar CPU ou GPU nas configurações da interface ou via `--no-gpu` no CLI.
+
+**Instalação PyTorch com CUDA:**
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
 
 ## 🏗️ Arquitetura e Fluxo de Processamento
 
@@ -139,4 +264,5 @@ O arquivo `src/config.py` centraliza constantes importantes, como:
 * `EMOTION_THRESHOLDS`: Sensibilidade para cada tipo de emoção.
 
 ---
-**Tech Challenge Fase 4 - Pós Tech Data Analytics**
+
+## Tech Challenge Fase 4 - Pós Tech Data Analytics

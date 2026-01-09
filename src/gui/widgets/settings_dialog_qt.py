@@ -39,6 +39,7 @@ class SettingsDialog(QDialog):
         
         # Botões
         button_layout = QHBoxLayout()
+        
         button_layout.addStretch()
         
         self.apply_btn = QPushButton("Aplicar")
@@ -81,7 +82,7 @@ class SettingsDialog(QDialog):
                 background-color: #5CBF60;
             }
         """)
-    
+
     def _apply_current_settings(self, settings):
         """Aplica configurações atuais ao painel."""
         # Bloqueia signals temporariamente
@@ -108,7 +109,7 @@ class SettingsDialog(QDialog):
         self.settings_panel.gpu_combo.setCurrentIndex(gpu_map.get(use_gpu, 0))
         
         # Aplica tamanho do modelo YOLO
-        model_size = settings.get('model_size', 'n')
+        model_size = settings.get('model_size', 'l')
         size_map = {"n": 0, "s": 1, "m": 2, "l": 3}
         self.settings_panel.model_size_combo.setCurrentIndex(size_map.get(model_size, 0))
         

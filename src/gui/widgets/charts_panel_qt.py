@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from collections import Counter
+import logging
 
 from ...config import ANOMALY_LABELS, OBJECT_LABELS, ACTIVITY_CATEGORIES, EMOTION_LABELS
 

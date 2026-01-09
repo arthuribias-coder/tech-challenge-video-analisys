@@ -6,20 +6,23 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QMenuBar, QMenu, QStatusBar, QProgressBar,
     QFileDialog, QMessageBox, QLabel, QSpinBox,
-    QPushButton, QToolBar, QSizePolicy, QSplitter, QScrollArea
+    QPushButton, QToolBar, QSizePolicy, QSplitter, QScrollArea,
+    QCheckBox, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QAction, QIcon, QFontDatabase
 from pathlib import Path
+import logging
 
-from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt, SettingsDialog
+from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt
+# removed SettingsDialog import as we are moving settings to header
+from .widgets.error_dialog_qt import ErrorDialog
 from .threads import ProcessorThreadQt
 from .icon_provider import IconProvider
 from ..config import (
     OUTPUT_DIR, FRAME_SKIP, TARGET_FPS, ENABLE_PREVIEW, PREVIEW_FPS,
     ENABLE_OBJECT_DETECTION, VIDEO_PATH, USE_GPU, YOLO_MODEL_SIZE
 )
-
 
 class MainWindow(QMainWindow):
     """Janela principal da aplicação Qt."""
@@ -147,13 +150,15 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(5)
         main_layout.setContentsMargins(5, 5, 5, 5)
         
-        # Splitter horizontal principal (video à esquerda / painel direito)
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Layout horizontal (Video | Painel Fixo)
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(5)
         
-        # Esquerda: Video Player
+        # Esquerda: Video Player (expansível)
         self.video_player = VideoPlayerQt()
+        self.video_player.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.video_player.setMinimumWidth(500)
-        main_splitter.addWidget(self.video_player)
+        content_layout.addWidget(self.video_player, stretch=1)
         
         # Direita: Painel com Stats + Charts (em scroll area)
         right_panel = QWidget()
@@ -168,7 +173,7 @@ class MainWindow(QMainWindow):
         
         # Charts Panel (abaixo das estatísticas)
         self.charts_panel = ChartsPanelQt()
-        self.charts_panel.setMinimumHeight(350)
+        self.charts_panel.setMinimumHeight(400)
         right_layout.addWidget(self.charts_panel)
         
         # Adiciona espaçador para empurrar conteúdo para cima
@@ -178,106 +183,163 @@ class MainWindow(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(right_panel)
-        scroll_area.setMinimumWidth(350)
+        
+        # Tamanho fixo de 406px
+        scroll_area.setFixedWidth(406) 
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
-        main_splitter.addWidget(scroll_area)
+        content_layout.addWidget(scroll_area)
         
-        # Define proporções iniciais do splitter
-        main_splitter.setStretchFactor(0, 6)  # Video (60%)
-        main_splitter.setStretchFactor(1, 4)  # Stats + Charts (40%)
-        
-        main_layout.addWidget(main_splitter)
+        main_layout.addLayout(content_layout)
     
     def _setup_toolbar(self):
-        """Cria toolbar com botões."""
+        """Cria toolbar com botões compactos e configurações no header."""
         toolbar = QToolBar("Controles Principais")
-        toolbar.setIconSize(QSize(32, 32))
+        toolbar.setIconSize(QSize(20, 20))
         toolbar.setMovable(False)
         toolbar.setStyleSheet("""
             QToolBar {
-                background-color: #2d2d2d;
-                border-bottom: 2px solid #3d3d3d;
-                spacing: 5px;
-                padding: 5px;
+                background-color: #1e1e1e;
+                border-bottom: 1px solid #333;
+                spacing: 6px;
+                padding: 4px;
             }
             QToolButton {
-                background-color: #3d3d3d;
+                background-color: #2d2d2d;
                 color: #e0e0e0;
-                border: 1px solid #555;
-                border-radius: 5px;
-                padding: 8px;
-                font-size: 14px;
-                min-width: 120px;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 11px;
+                min-width: 50px;
             }
             QToolButton:hover {
-                background-color: #4d4d4d;
-                border: 1px solid #777;
+                background-color: #3d3d3d;
+                border: 1px solid #666;
             }
             QToolButton:pressed {
-                background-color: #2d2d2d;
+                background-color: #1a1a1a;
             }
             QToolButton:disabled {
-                background-color: #2a2a2a;
-                color: #666;
+                background-color: #222;
+                color: #555;
+                border: 1px solid #2a2a2a;
+            }
+            QLabel {
+                color: #bbb;
+                font-size: 11px;
+                margin-left: 2px;
+            }
+            QComboBox {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                border: 1px solid #444;
+                border-radius: 3px;
+                padding: 2px 5px;
+                font-size: 11px;
+                min-width: 60px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QCheckBox {
+                color: #e0e0e0;
+                font-size: 11px;
+                spacing: 4px;
             }
         """)
         self.addToolBar(toolbar)
         
         # Botão Abrir Vídeo
-        open_action = QAction(IconProvider.document_open(), "Abrir Vídeo", self)
-        open_action.setShortcut("Ctrl+O")
-        open_action.setToolTip("Abrir vídeo para análise (Ctrl+O)")
+        open_action = QAction(IconProvider.document_open(), "Abrir", self)
+        open_action.setToolTip("Abrir vídeo (Ctrl+O)")
         open_action.triggered.connect(self._open_video)
         toolbar.addAction(open_action)
         
-        toolbar.addSeparator()
-        
-        # Botão Configurações
-        settings_action = QAction("Configuracoes", self)
-        settings_action.setShortcut("Ctrl+,")
-        settings_action.setToolTip("Configurar processamento (Ctrl+,)")
-        settings_action.triggered.connect(self._open_settings)
-        toolbar.addAction(settings_action)
-        
-        toolbar.addSeparator()
-        
         # Botão Processar
-        self.start_action = QAction(IconProvider.media_play(), "Processar", self)
-        self.start_action.setToolTip("Iniciar processamento do vídeo")
+        self.start_action = QAction(IconProvider.media_play(), "Iniciar", self)
+        self.start_action.setToolTip("Iniciar processamento")
         self.start_action.triggered.connect(self._start_processing)
         toolbar.addAction(self.start_action)
         
         # Botão Pausar
         self.pause_action = QAction(IconProvider.media_pause(), "Pausar", self)
-        self.pause_action.setToolTip("Pausar processamento")
+        self.pause_action.setToolTip("Pausar")
         self.pause_action.triggered.connect(self._pause_processing)
         self.pause_action.setEnabled(False)
         toolbar.addAction(self.pause_action)
         
         # Botão Parar
         self.stop_action = QAction(IconProvider.media_stop(), "Parar", self)
-        self.stop_action.setToolTip("Parar processamento")
+        self.stop_action.setToolTip("Parar")
         self.stop_action.triggered.connect(self._stop_processing)
         self.stop_action.setEnabled(False)
         toolbar.addAction(self.stop_action)
         
-        toolbar.addSeparator()
-        
         # Botão Salvar
-        save_action = QAction(IconProvider.document_save(), "Salvar Vídeo", self)
-        save_action.setShortcut("Ctrl+S")
-        save_action.setToolTip("Salvar vídeo processado (Ctrl+S)")
+        save_action = QAction(IconProvider.document_save(), "Salvar", self)
+        save_action.setToolTip("Salvar vídeo")
         save_action.triggered.connect(self._save_video)
         toolbar.addAction(save_action)
+
+        toolbar.addSeparator()
+
+        # === Configurações no Header ===
         
-        # Botão Exportar
-        export_action = QAction(IconProvider.chart_bar(), "Exportar Relatório", self)
-        export_action.setShortcut("Ctrl+E")
-        export_action.setToolTip("Exportar relatório de análise (Ctrl+E)")
-        export_action.triggered.connect(self._export_report)
-        toolbar.addAction(export_action)
+        # 1. Preset (Combina FrameSkip e PreviewFPS)
+        toolbar.addWidget(QLabel("Modo:"))
+        self.combo_preset = QComboBox()
+        self.combo_preset.addItems(["Balanceado", "Rapido", "Alta Qualidade"])
+        self.combo_preset.setToolTip("Define velocidade vs precisão")
+        # Default: Balanceado
+        self.combo_preset.currentIndexChanged.connect(self._on_preset_changed)
+        toolbar.addWidget(self.combo_preset)
         
+        toolbar.addSeparator()
+
+        # 2. Modelo YOLO
+        toolbar.addWidget(QLabel("Modelo:"))
+        self.combo_model = QComboBox()
+        self.combo_model.addItems(["Nano", "Small", "Medium", "Large"])
+        
+        # Set initial value
+        size_map = {"n": 0, "s": 1, "m": 2, "l": 3}
+        current_idx = size_map.get(self.processing_settings.get('model_size', 'n'), 0)
+        self.combo_model.setCurrentIndex(current_idx)
+        self.combo_model.currentIndexChanged.connect(self._on_model_changed)
+        toolbar.addWidget(self.combo_model)
+
+        # 3. Dispositivo
+        toolbar.addWidget(QLabel("Device:"))
+        self.combo_device = QComboBox()
+        self.combo_device.addItems(["Auto", "GPU", "CPU"])
+        
+        current_gpu = self.processing_settings.get('use_gpu', 'auto')
+        dev_map = {"auto": 0, "true": 1, "false": 2}
+        self.combo_device.setCurrentIndex(dev_map.get(current_gpu, 0))
+        self.combo_device.currentIndexChanged.connect(self._on_device_changed)
+        toolbar.addWidget(self.combo_device)
+
+        toolbar.addSeparator()
+
+        # 4. Checkboxes
+        self.chk_preview = QCheckBox("Preview Vídeo")
+        self.chk_preview.setChecked(self.processing_settings.get('enable_preview', True))
+        self.chk_preview.stateChanged.connect(self._on_preview_changed)
+        toolbar.addWidget(self.chk_preview)
+
+        self.chk_obj = QCheckBox("Rastrear Objetos")
+        self.chk_obj.setToolTip("Detectar objetos fora de contexto")
+        self.chk_obj.setChecked(self.processing_settings.get('enable_object_detection', True))
+        self.chk_obj.stateChanged.connect(self._on_obj_det_changed)
+        toolbar.addWidget(self.chk_obj)
+
+        # Checkbox Debug
+        self.chk_debug = QCheckBox("Debug")
+        self.chk_debug.setToolTip("Ativar modo de depuração e logs")
+        self.chk_debug.stateChanged.connect(self._toggle_debug)
+        toolbar.addWidget(self.chk_debug)
+
         # Espaçador
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -327,20 +389,54 @@ class MainWindow(QMainWindow):
                 self.stats_panel.reset()
                 self.charts_panel.clear_data()
             else:
-                QMessageBox.critical(self, "Erro", "Não foi possível carregar o vídeo!")    
-    def _open_settings(self):
-        """Abre dialog de configurações."""
-        dialog = SettingsDialog(self, self.processing_settings)
-        dialog.settings_applied.connect(self._on_settings_changed)
-        dialog.exec()
-    
-    def _on_settings_changed(self, settings):
-        """Callback quando configurações são alteradas."""
-        self.processing_settings = settings
-        self.status_label.setText(
-            f"Configuracoes atualizadas: Skip={settings['frame_skip']}, "
-            f"FPS={settings['target_fps']}, Preview={'ON' if settings['enable_preview'] else 'OFF'}"
-        )    
+                QMessageBox.critical(self, "Erro", "Não foi possível carregar o vídeo!") 
+
+    # === Métodos de Configuração (Header) ===
+
+    def _on_preset_changed(self, index):
+        """Atualiza configurações baseado no preset."""
+        # Itens: 0=Balanceado, 1=Rapido, 2=Alta Qualidade
+        text = self.combo_preset.currentText()
+        if "Rapido" in text:
+            self.processing_settings['frame_skip'] = 5
+            self.processing_settings['preview_fps'] = 5
+        elif "Alta" in text:
+            self.processing_settings['frame_skip'] = 1
+            self.processing_settings['preview_fps'] = 15
+        else: # Balanceado ou outros
+            self.processing_settings['frame_skip'] = 2
+            self.processing_settings['preview_fps'] = 10
+        
+        self.status_label.setText(f"Modo alterado para: {text}")
+
+    def _on_model_changed(self, index):
+        """Atualiza tamanho do modelo YOLO."""
+        # Index: 0=n, 1=s, 2=m, 3=l (mesma ordem do combo)
+        sizes = ['n', 's', 'm', 'l']
+        if 0 <= index < len(sizes):
+            self.processing_settings['model_size'] = sizes[index]
+            self.status_label.setText(f"Modelo definido: {sizes[index].upper()}")
+
+    def _on_device_changed(self, index):
+        """Atualiza dispositivo de processamento."""
+        # Combo: 0=Auto, 1=GPU, 2=CPU
+        vals = ["auto", "true", "false"]
+        if 0 <= index < len(vals):
+            self.processing_settings['use_gpu'] = vals[index]
+            self.status_label.setText(f"Device: {self.combo_device.currentText()}")
+
+    def _on_preview_changed(self, state):
+        """Habilita/desabilita preview."""
+        enabled = (state != 0) # Checked or PartiallyChecked
+        self.processing_settings['enable_preview'] = enabled
+        self.status_label.setText(f"Preview {'ativado' if enabled else 'desativado'}")
+
+    def _on_obj_det_changed(self, state):
+        """Habilita/desabilita detecção de objetos."""
+        enabled = (state != 0)
+        self.processing_settings['enable_object_detection'] = enabled
+        self.status_label.setText(f"Obj. Det. {'ativada' if enabled else 'desativada'}")
+
     def _start_processing(self):
         """Inicia processamento."""
         if not self.video_path:
@@ -366,8 +462,6 @@ class MainWindow(QMainWindow):
             preview_fps=settings['preview_fps'],
             # Detectores avançados
             enable_object_detection=settings.get('enable_object_detection'),
-            enable_overlay_detection=settings.get('enable_overlay_detection'),
-            enable_segment_validation=settings.get('enable_segment_validation'),
             # Configurações de hardware
             use_gpu=settings.get('use_gpu'),
             model_size=settings.get('model_size')
@@ -378,6 +472,10 @@ class MainWindow(QMainWindow):
         self.processor_thread.finished_signal.connect(self._on_complete)
         self.processor_thread.error.connect(self._on_error)
         self.processor_thread.frame_processed.connect(self._on_frame_processed)
+        
+        # Aplica estado inicial do debug mode
+        if hasattr(self, 'chk_debug'):
+             self.processor_thread.set_debug_mode(self.chk_debug.isChecked())
         
         # Ativa modo preview no player se habilitado
         if settings['enable_preview']:
@@ -482,7 +580,10 @@ class MainWindow(QMainWindow):
         progress = int((frame_idx / total_frames) * 100) if total_frames > 0 else 0
         self.progress_bar.setValue(progress)
         self.fps_label.setText(f"FPS: {fps:.1f}")
-        self.status_label.setText(f"Processando... {progress}% | FPS: {fps:.1f}")
+        
+        # Mostra status com indicador [PREVIEW] se ativado
+        status_prefix = "[PREVIEW ON] " if self.processing_settings.get('enable_preview') else ""
+        self.status_label.setText(f"{status_prefix}Processando... Frame {frame_idx}/{total_frames} ({progress}%) | FPS: {fps:.1f}")
         
         # Atualiza painéis
         self.stats_panel.update_stats(stats)
@@ -490,6 +591,25 @@ class MainWindow(QMainWindow):
         
         # Armazena stats
         self.last_stats = stats
+
+    def _toggle_debug(self, state):
+        """Alterna modo debug."""
+        enabled = (state == 2) # Qt.CheckState.Checked
+        
+        # Atualiza nível de log global (afeta saída do console)
+        level = logging.DEBUG if enabled else logging.INFO
+        logging.getLogger().setLevel(level)
+        
+        # Log de confirmação
+        if enabled:
+            logging.debug("Modo de depuração ativado")
+        else:
+            logging.info("Modo de depuração desativado")
+        
+        # Atualiza thread de processamento
+        if hasattr(self, 'processor_thread') and self.processor_thread:
+            if self.processor_thread.isRunning():
+                self.processor_thread.set_debug_mode(enabled)
     
     def _on_complete(self, stats, elapsed_time):
         """Callback de conclusão."""
@@ -523,8 +643,6 @@ class MainWindow(QMainWindow):
     
     def _on_error(self, error_msg):
         """Callback de erro."""
-        self.status_label.setText(f"Erro: {error_msg}")
-        
         # Desativa preview
         self.video_player.disable_preview_mode()
         
@@ -533,7 +651,17 @@ class MainWindow(QMainWindow):
         self.pause_action.setEnabled(False)
         self.stop_action.setEnabled(False)
         
-        QMessageBox.critical(self, "Erro no Processamento", error_msg)
+        # Atualiza status
+        self.status_label.setText("Erro no processamento")
+        
+        # Mostra dialogo customizado
+        dlg = ErrorDialog(
+            self,
+            title="Erro no Processamento",
+            message="Ocorreu um erro durante o processamento do vídeo.",
+            details=f"Mensagem de Erro: {error_msg}\n\nVerifique o console para traceback completo se necessário." 
+        )
+        dlg.exec()
     
     def _on_frame_processed(self, frame_idx, frame, metadata):
         """Callback para frame processado (preview em tempo real)."""

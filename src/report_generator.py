@@ -6,12 +6,15 @@ Suporta geração com LLM (OpenAI) ou template local.
 
 import os
 import json
+import logging
 from typing import Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
 from .config import OPENAI_API_KEY, OPENAI_MODEL, REPORTS_DIR, EMOTION_LABELS, ACTIVITY_CATEGORIES, ANOMALY_LABELS
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,7 +62,7 @@ class ReportGenerator:
             self.llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0.3)
             self.PromptTemplate = PromptTemplate
         except ImportError:
-            print("[AVISO] LangChain não instalado, usando geração de relatório sem LLM")
+            logger.warning("LangChain não instalado, usando geração de relatório sem LLM")
             self.use_llm = False
     
     def generate(
@@ -112,7 +115,7 @@ class ReportGenerator:
         # Salva se caminho fornecido
         if output_path:
             Path(output_path).write_text(report, encoding='utf-8')
-            print(f"[INFO] Relatório salvo em: {output_path}")
+            logger.info(f"Relatório salvo em: {output_path}")
         
         return report
     
@@ -269,7 +272,7 @@ Resumo:
             response = chain.invoke(data)
             return response.content.strip()
         except Exception as e:
-            print(f"[ERRO] LLM: {e}")
+            logger.error(f"LLM: {e}")
             return self._generate_template_summary(result)
     
     def _generate_template_summary(self, result: VideoAnalysisResult) -> str:
@@ -338,4 +341,4 @@ Durante a análise, foram identificadas **{result.unique_faces} pessoa(s)** com 
             json.dumps(data, indent=2, ensure_ascii=False),
             encoding='utf-8'
         )
-        print(f"[INFO] Relatório JSON salvo em: {output_path}")
+        logger.info(f"Relatório JSON salvo em: {output_path}")

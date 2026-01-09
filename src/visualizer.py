@@ -77,9 +77,9 @@ def draw_detections(
     objects: List[object] = None,  # Lista de ObjectDetection opcional
     overlays: List[object] = None, # Lista de OverlayDetection opcional
     min_face_size: int = 40,
-    min_emotion_conf: float = 0.5,  # Fallback para emoções sem threshold específico
-    min_activity_conf: float = 0.5,
-    min_object_conf: float = 0.5,
+    min_emotion_conf: float = 0.3,  # Reduzido para exibir mais detecções
+    min_activity_conf: float = 0.3, # Reduzido (pois confidence = box * act_prob)
+    min_object_conf: float = 0.3,
     use_adaptive_threshold: bool = True  # Usa thresholds adaptativos por emoção
 ) -> np.ndarray:
     """

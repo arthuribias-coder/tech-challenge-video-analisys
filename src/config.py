@@ -4,7 +4,10 @@ Centraliza todas as configurações e constantes utilizadas na aplicação.
 """
 
 from pathlib import Path
-import os
+import logging
+
+# Configuração de logging
+logger = logging.getLogger(__name__)
 
 # Diretórios
 BASE_DIR = Path(__file__).parent.parent
@@ -21,7 +24,7 @@ REPORTS_DIR.mkdir(exist_ok=True)
 MODELS_DIR.mkdir(exist_ok=True)
 
 # Vídeo de entrada padrão
-VIDEO_PATH = str(INPUT_DIR / "Unlocking Facial Recognition_ Diverse Activities Analysis.mp4")
+VIDEO_PATH = None
 
 # ===== CONFIGURAÇÕES DE GPU =====
 # Valores: "auto" (detecta automaticamente), "true" (força GPU), "false" (força CPU)
@@ -51,6 +54,10 @@ def get_device() -> str:
 # ===== CONFIGURAÇÕES DE PROCESSAMENTO =====
 FRAME_SKIP = 2
 CONFIDENCE_THRESHOLD = 0.5
+DEBUG_LOGGING = False  # Habilita logs detalhados de análise (Padrão: False)
+
+# Constantes para intervalos de debug
+DEBUG_LOG_INTERVAL = 30  # Loga a cada N frames quando debug está ativo
 
 # ===== CONFIGURAÇÕES DO ANALISADOR DE EMOÇÕES =====
 EMOTION_ANALYZER_METHOD = "deepface"
@@ -60,12 +67,12 @@ DEEPFACE_CACHE_DIR = str(MODELS_DIR / "deepface")
 # Thresholds adaptativos por emoção
 EMOTION_THRESHOLDS = {
     'neutral': 0.25,
-    'sad': 0.30,
+    'sad': 0.60,
     'happy': 0.35,
-    'surprise': 0.40,
-    'fear': 0.40,
-    'angry': 0.40,
-    'disgust': 0.45,
+    'surprise': 0.50,
+    'fear': 0.70,
+    'angry': 0.50,
+    'disgust': 0.55,
     'grimace': 0.35
 }
 
@@ -84,52 +91,79 @@ YOLO_MODEL_SIZE = "n"
 # Estes valores controlam como as poses são classificadas
 ACTIVITY_POSE_THRESHOLDS = {
     # Em Pé (Standing) - verificações de postura vertical
-    "standing_hip_knee_diff_min": 50,     # Diferença mínima Y entre quadril e joelho para em pé (px)
-    "standing_knee_ankle_diff_min": 30,   # Diferença mínima Y entre joelho e tornozelo (px)
-    "standing_hip_ankle_diff_min": 100,   # Diferença mínima Y quadril-tornozelo (px)
+    "standing_hip_knee_diff_min": 50,
+    "standing_knee_ankle_diff_min": 30,
+    "standing_hip_ankle_diff_min": 100,
     
     # Sentado vs Agachado
-    "sitting_knee_hip_diff_max": 80,      # Máxima diferença Y entre quadril e joelho (px)
-    "sitting_torso_factor": 0.5,          # Fator para comparar diferença com comprimento do torso
-    "crouching_hip_knee_diff": 30,        # Máxima diferença Y entre quadril e joelho para agachado (px)
-    "crouching_ankle_margin": 10,         # Margem entre joelho e tornozelo para agachado (px)
+    "sitting_knee_hip_diff_max": 80,
+    "sitting_torso_factor": 0.5,
+    "crouching_hip_knee_diff": 30,
+    "crouching_ankle_margin": 10,
     
     # Deitado
-    "lying_horizontal_ratio": 2.0,        # Razão horizontal/vertical para considerar deitado
-    "lying_min_horizontal_dist": 100,     # Distância horizontal mínima (px)
-    "lying_min_total_horizontal": 150,    # Distância horizontal total ombro-tornozelo
-    "lying_shoulder_width_threshold": 40, # Largura dos ombros (pessoa de lado)
-    "lying_hip_width_threshold": 40,      # Largura do quadril (pessoa de lado)
+    "lying_horizontal_ratio": 2.0,
+    "lying_min_horizontal_dist": 100,
+    "lying_min_total_horizontal": 150,
+    "lying_shoulder_width_threshold": 40,
+    "lying_hip_width_threshold": 40,
     
     # Braços Levantados
-    "arms_raised_hand_above_head": 80,    # Mão deve estar acima da cabeça por este valor (px)
+    "arms_raised_hand_above_head": 80,
     
     # Acenando/Waving
-    "waving_hand_above_shoulder": 40,     # Mão deve estar acima do ombro por este valor (px)
-    "waving_elbow_angle_min": 40,         # Ângulo mínimo do cotovelo
-    "waving_elbow_angle_max": 160,        # Ângulo máximo do cotovelo
+    "waving_hand_above_shoulder": 40,
+    "waving_elbow_angle_min": 40,
+    "waving_elbow_angle_max": 160,
     
     # Apontando
-    "pointing_arm_angle_min": 150,        # Ângulo mínimo do braço estendido
-    "pointing_horizontal_length": 80,     # Comprimento mínimo horizontal
-    "pointing_vertical_variance": 60,     # Variação máxima vertical
+    "pointing_arm_angle_min": 150,
+    "pointing_horizontal_length": 80,
+    "pointing_vertical_variance": 60,
     
     # Movimento
-    "running_velocity_threshold": 80,     # Velocidade mínima para correr (px/frame)
-    "walking_velocity_threshold": 25,     # Velocidade mínima para caminhar (px/frame)
-    "gesture_velocity_threshold": 5,      # Velocidade mínima para considerar gestos
-    "sitting_max_velocity": 15,           # Velocidade MÁXIMA para considerar sentado (px/frame)
+    "running_velocity_threshold": 80,
+    "walking_velocity_threshold": 25,
+    "gesture_velocity_threshold": 5,
+    "sitting_max_velocity": 15,
     
     # Em Pé Frontal (pessoa de frente para câmera)
-    "frontal_shoulder_hip_min": 40,       # Distância Y mínima ombro-quadril (px) para postura vertical
-    "frontal_torso_vertical_ratio": 1.5,  # Torso deve ser mais vertical que horizontal (ratio)
-    "frontal_head_above_shoulders": 20,   # Cabeça deve estar acima dos ombros (px)
-    "frontal_bbox_aspect_ratio": 1.2,     # BBox mais alto que largo indica pessoa em pé
+    "frontal_shoulder_hip_min": 40,
+    "frontal_torso_vertical_ratio": 1.5,
+    "frontal_head_above_shoulders": 20,
+    "frontal_bbox_aspect_ratio": 1.2,
     
     # Cumprimento/Greeting - detecção de aperto de mão
-    "greeting_wrist_distance_max": 60,    # Distância máxima entre pulsos (px)
-    "greeting_shoulder_distance_min": 150, # Distância mínima entre ombros (px)
-    "greeting_wrist_height_diff_max": 50, # Variação máxima de altura entre pulsos (px)
+    "greeting_wrist_distance_max": 60,
+    "greeting_shoulder_distance_min": 150,
+    "greeting_wrist_height_diff_max": 50,
+}
+
+# ===== AJUSTES CONTEXTUAIS DE EMOÇÃO =====
+# Define pesos multiplicadores para emoções baseados no contexto da cena.
+# Útil per corrigir vieses do modelo (ex: pessoa lendo = "triste"/"medo").
+# Pesos < 1.0 penalizam, > 1.0 favorecem.
+SCENE_EMOTION_WEIGHTS = {
+    "office": {
+        "neutral": 1.3,     # Favorece neutro (trabalho/concentração)
+        "happy": 1.0,
+        "sad": 0.4,         # Penaliza fortemente (leitura/cabeça baixa confunde modelo)
+        "fear": 0.4,        # Penaliza medo (comum falso positivo em escritório)
+        "disgust": 0.4,     # Penaliza nojo (sobrancelhas franzidas ao ler)
+        "angry": 0.6,       # Penaliza raiva (concentração)
+        "surprise": 0.8,
+        "grimace": 0.5
+    },
+    "home": {
+        "neutral": 1.1,
+        "sad": 0.6,         # Relaxamento pode parecer tristeza
+        "fear": 0.6,
+        "disgust": 0.6
+    },
+    "outdoors": {
+        "neutral": 1.0
+        # Externo assume menos premissas
+    }
 }
 
 # OpenAI (opcional para geração de resumo)
@@ -199,19 +233,33 @@ ANOMALY_THRESHOLDS = {
 # Regras de contexto de cena
 SCENE_CONTEXT_RULES = {
     "office": {
-        "keywords": ["office", "conference_room", "cubicle", "library", "classroom", "studio"],
-        "expected": ["person", "chair", "laptop", "tv", "cell phone", "book", "keyboard", "mouse", "desk"],
-        "anomalous": ["umbrella", "sports ball", "skateboard", "baseball bat", "bed", "toilet", "bicycle", "car", "motorcycle"]
+        "keywords": [
+            "office", "conference", "cubicle", "library", "classroom", "studio", 
+            "lab", "school", "shop", "store", "barber", "restaurant", "hospital",
+            "computer", "desk", "notebook", "laptop", "suit", "tie", "gown", "mortarboard",
+            "turnstile", "monitor", "screen", "uniform", "accordion", "violin", "cello"
+        ],
+        "expected": ["person", "chair", "laptop", "tv", "cell phone", "book", "keyboard", "mouse", "desk", "tie", "suit"],
+        "anomalous": ["sports ball", "skateboard", "baseball bat", "bed", "toilet", "bicycle", "car", "motorcycle", "surfboard"]
     },
     "home": {
-        "keywords": ["living_room", "bedroom", "kitchen", "dining_room"],
-        "expected": ["person", "chair", "sofa", "tv", "bed", "refrigerator", "microwave", "cup", "bottle"],
-        "anomalous": ["bicycle", "car", "bus", "truck", "traffic light", "fire hydrant"]
+        "keywords": [
+            "living_room", "bedroom", "kitchen", "dining", "room", "home", "house", 
+            "bath", "shower", "toilet", "theater", "couch", "sofa", "bed", 
+            "tissue", "towel", "cap", "nipple", "cradle", "crib", "diaper",
+            "washer", "dryer", "refrigerator", "microwave", "oven"
+        ],
+        "expected": ["person", "chair", "sofa", "tv", "bed", "refrigerator", "microwave", "cup", "bottle", "dining table", "sink", "toilet"],
+        "anomalous": ["bus", "truck", "traffic light", "fire hydrant", "airplane"]
     },
     "outdoors": {
-        "keywords": ["park", "street", "playground", "parking", "forest"],
-        "expected": ["person", "bicycle", "car", "dog", "bird", "umbrella", "bench"],
-        "anomalous": ["tv", "mouse", "keyboard", "microwave", "refrigerator", "couch", "bed"]
+        "keywords": [
+            "park", "street", "playground", "parking", "forest", "road", "vehicle", 
+            "transport", "plane", "boat", "sport", "stadium", "jersey", "ski", 
+            "mask", "parachute", "traffic", "sand", "sea", "mountain", "crutch"
+        ],
+        "expected": ["person", "bicycle", "car", "dog", "bird", "umbrella", "bench", "bus", "truck", "airplane", "traffic light"],
+        "anomalous": ["tv", "mouse", "keyboard", "microwave", "refrigerator", "couch", "bed", "sink"]
     }
 }
 

@@ -4,7 +4,7 @@ Painel de estatísticas em tempo real com PyQt6
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QGroupBox,
-    QDialog, QTextEdit, QDialogButtonBox
+    QDialog, QTextEdit, QDialogButtonBox, QHBoxLayout, QFrame
 )
 from PyQt6.QtCore import Qt
 from collections import Counter
@@ -20,148 +20,143 @@ class StatsPanelQt(QWidget):
             'faces': 0,
             'emotions': Counter(),
             'activities': Counter(),
-            'anomalies': Counter()
+            'anomalies': Counter(),
+            'scenes': Counter()
         }
         
         self._setup_ui()
     
     def _setup_ui(self):
-        """Configura interface do painel."""
+        """Configura interface minimalista ('dashboard')."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
         
-        # Título
-        title = QLabel("ESTATÍSTICAS")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                font-weight: bold;
-                padding: 10px;
-                background-color: #2d2d2d;
-                border-radius: 5px;
+        # Estilos globais para o painel
+        self.setStyleSheet("""
+            QLabel#title_lbl { 
+                color: #888; 
+                font-size: 11px; 
+                font-weight: bold; 
+                text-transform: uppercase; 
+                letter-spacing: 1px;
+            }
+            QLabel#value_lbl { 
+                font-size: 22px; 
+                font-weight: bold; 
+            }
+            QLabel#subtext_lbl { 
+                color: #666; 
+                font-size: 11px; 
+            }
+            QFrame#line { 
+                background-color: #333; 
+                max-height: 1px; 
+                border: none;
             }
         """)
-        layout.addWidget(title)
+
+        # -- LINHA 1: Faces e Anomalias (Lado a Lado) --
+        row1 = QHBoxLayout()
         
-        # Faces
-        faces_group = self._create_stat_group("Faces Detectadas")
-        self.faces_label = QLabel("0")
-        self.faces_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.faces_label.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: bold;
-                color: #4CAF50;
-                padding: 10px;
-            }
-        """)
-        faces_group.layout().addWidget(self.faces_label)
-        layout.addWidget(faces_group)
+        # Coluna Faces
+        col_faces = QVBoxLayout()
+        col_faces.setSpacing(2)
+        col_faces.addWidget(QLabel("FACES", objectName="title_lbl"))
+        self.faces_label = QLabel("0", objectName="value_lbl")
+        self.faces_label.setStyleSheet("color: #4CAF50;") # Verde
+        col_faces.addWidget(self.faces_label)
+        row1.addLayout(col_faces)
+
+        # Coluna Anomalias
+        col_anom = QVBoxLayout()
+        col_anom.setSpacing(2)
+        col_anom.addWidget(QLabel("ANOMALIAS", objectName="title_lbl"))
+        self.anomaly_label = QLabel("0", objectName="value_lbl")
+        self.anomaly_label.setStyleSheet("color: #F44336;") # Vermelho
+        col_anom.addWidget(self.anomaly_label)
+        row1.addLayout(col_anom)
         
-        # Emoção
-        emotion_group = self._create_stat_group("Emoção Principal")
-        self.emotion_label = QLabel("--")
-        self.emotion_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.emotion_label.setStyleSheet("""
-            QLabel {
-                font-size: 18px;
-                color: #2196F3;
-                padding: 5px;
-            }
-        """)
-        self.emotion_count_label = QLabel("(0 ocorrências)")
-        self.emotion_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.emotion_count_label.setStyleSheet("color: #888;")
+        layout.addLayout(row1)
         
-        emotion_group.layout().addWidget(self.emotion_label)
-        emotion_group.layout().addWidget(self.emotion_count_label)
-        layout.addWidget(emotion_group)
+        # Separador
+        line1 = QFrame(objectName="line")
+        line1.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(line1)
+
+        # -- SEÇÃO DE EMOÇÃO --
+        layout.addWidget(QLabel("EMOÇÃO PREDOMINANTE", objectName="title_lbl"))
+        self.emotion_label = QLabel("--", objectName="value_lbl")
+        self.emotion_label.setStyleSheet("color: #2196F3;") # Azul
+        layout.addWidget(self.emotion_label)
+        self.emotion_count_label = QLabel("-", objectName="subtext_lbl")
+        layout.addWidget(self.emotion_count_label) # Detalhe %
+
+        # Separador
+        line2 = QFrame(objectName="line")
+        line2.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(line2)
+
+        # -- SEÇÃO DE ATIVIDADE --
+        layout.addWidget(QLabel("ATIVIDADE PRINCIPAL", objectName="title_lbl"))
+        self.activity_label = QLabel("--", objectName="value_lbl")
+        self.activity_label.setStyleSheet("color: #FF9800;") # Laranja
+        layout.addWidget(self.activity_label)
+        self.activity_count_label = QLabel("-", objectName="subtext_lbl")
+        layout.addWidget(self.activity_count_label)
         
-        # Atividade
-        activity_group = self._create_stat_group("Atividade Principal")
-        self.activity_label = QLabel("--")
-        self.activity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.activity_label.setStyleSheet("""
-            QLabel {
-                font-size: 18px;
-                color: #FF9800;
-                padding: 5px;
-            }
-        """)
-        self.activity_count_label = QLabel("(0 ocorrências)")
-        self.activity_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.activity_count_label.setStyleSheet("color: #888;")
-        
-        activity_group.layout().addWidget(self.activity_label)
-        activity_group.layout().addWidget(self.activity_count_label)
-        layout.addWidget(activity_group)
-        
-        # Anomalias
-        anomaly_group = self._create_stat_group("Anomalias")
-        self.anomaly_label = QLabel("0")
-        self.anomaly_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.anomaly_label.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: bold;
-                color: #F44336;
-                padding: 10px;
-            }
-        """)
-        anomaly_group.layout().addWidget(self.anomaly_label)
-        layout.addWidget(anomaly_group)
-        
-        # Botão detalhes
-        self.details_btn = QPushButton("Ver Detalhes Completos")
-        self.details_btn.clicked.connect(self._show_details)
-        self.details_btn.setEnabled(False)
+        # Separador
+        line3 = QFrame(objectName="line")
+        line3.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(line3)
+
+        # -- SEÇÃO DE CENA --
+        layout.addWidget(QLabel("CONTEXTO / CENA", objectName="title_lbl"))
+        self.scene_label = QLabel("--", objectName="value_lbl")
+        self.scene_label.setStyleSheet("color: #9C27B0;") # Roxo
+        layout.addWidget(self.scene_label)
+        self.scene_conf_label = QLabel("Aguardando detecção...", objectName="subtext_lbl")
+        layout.addWidget(self.scene_conf_label)
+
+        layout.addStretch()
+
+        # Botão Rodapé
+        self.details_btn = QPushButton("RELATÓRIO DETALHADO")
+        self.details_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.details_btn.setStyleSheet("""
             QPushButton {
-                padding: 10px;
-                font-size: 13px;
-            }
-        """)
-        layout.addWidget(self.details_btn)
-        
-        layout.addStretch()
-    
-    def _create_stat_group(self, title):
-        """Cria grupo de estatística."""
-        group = QGroupBox(title)
-        group.setStyleSheet("""
-            QGroupBox {
+                background-color: #333;
+                border: 1px solid #555;
                 font-weight: bold;
-                border: 1px solid #444;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-                background-color: #252525;
+                padding: 12px;
+                border-radius: 4px;
             }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
+            QPushButton:hover {
+                background-color: #444;
+                border: 1px solid #666;
+            }
+            QPushButton:disabled {
+                background-color: #222;
+                color: #555;
+                border: 1px solid #333;
             }
         """)
-        
-        layout = QVBoxLayout()
-        layout.setSpacing(5)
-        group.setLayout(layout)
-        
-        return group
-    
+        self.details_btn.clicked.connect(self._show_details)
+        self.details_btn.setEnabled(False)
+        layout.addWidget(self.details_btn)
+
     def reset(self):
         """Reseta estatísticas."""
         self.stats = {
             'faces': 0,
             'emotions': Counter(),
             'activities': Counter(),
-            'anomalies': Counter()
+            'anomalies': Counter(),
+            'scenes': Counter()
         }
         self.update_stats(self.stats)
         self.details_btn.setEnabled(False)
+
     
     def update_stats(self, stats):
         """Atualiza estatísticas."""
@@ -176,14 +171,14 @@ class StatsPanelQt(QWidget):
             emotions = Counter(emotions)
         
         if emotions:
+            total_emotions = sum(emotions.values())
             dominant_emotion = emotions.most_common(1)[0]
             self.emotion_label.setText(dominant_emotion[0].title())
-            total = sum(emotions.values())
-            percent = (dominant_emotion[1] / total * 100) if total > 0 else 0
-            self.emotion_count_label.setText(f"({dominant_emotion[1]} - {percent:.1f}%)")
+            percent = (dominant_emotion[1] / total_emotions * 100) if total_emotions > 0 else 0
+            self.emotion_count_label.setText(f"({percent:.1f}%)")
         else:
             self.emotion_label.setText("--")
-            self.emotion_count_label.setText("(0 ocorrências)")
+            self.emotion_count_label.setText("(0.0%)")
         
         # Atividade dominante
         activities = stats.get('activities', Counter())
@@ -191,15 +186,42 @@ class StatsPanelQt(QWidget):
             activities = Counter(activities)
         
         if activities:
+            total_activities = sum(activities.values())
             dominant_activity = activities.most_common(1)[0]
-            self.activity_label.setText(dominant_activity[0].title())
-            total = sum(activities.values())
-            percent = (dominant_activity[1] / total * 100) if total > 0 else 0
-            self.activity_count_label.setText(f"({dominant_activity[1]} - {percent:.1f}%)")
+            if isinstance(dominant_activity[0], str):
+                self.activity_label.setText(dominant_activity[0].title())
+            else:
+                 self.activity_label.setText(str(dominant_activity[0]).title())
+
+            percent = (dominant_activity[1] / total_activities * 100) if total_activities > 0 else 0
+            self.activity_count_label.setText(f"({percent:.1f}%)")
         else:
             self.activity_label.setText("--")
-            self.activity_count_label.setText("(0 ocorrências)")
+            self.activity_count_label.setText("(0.0%)")
         
+        # Cena (Novo)
+        scenes = stats.get('scenes', Counter())
+        if scenes:
+            total_scenes = sum(scenes.values())
+            # Pega a cena mais comum
+            top_scene = scenes.most_common(1)[0]
+            
+            scene_map = {
+                'office': 'Escritório',
+                'home': 'Residência',
+                'outdoors': 'Ambiente Externo',
+                'unknown': 'Desconhecido'
+            }
+            
+            raw_name = top_scene[0]
+            scene_name = scene_map.get(raw_name, raw_name.replace("_", " ").title())
+            
+            count = top_scene[1]
+            percent = (count / total_scenes * 100) if total_scenes > 0 else 0
+            
+            self.scene_label.setText(scene_name)
+            self.scene_conf_label.setText(f"({percent:.1f}%)")
+            
         # Anomalias
         anomalies = stats.get('anomalies', Counter())
         if isinstance(anomalies, dict):
@@ -256,15 +278,52 @@ class StatsPanelQt(QWidget):
             total = sum(activities.values())
             percent = (count / total * 100) if total > 0 else 0
             details += f"   - {activity}: {count} ({percent:.1f}%)\n"
+
+        details += "\n[CONTEXTO / CENAS]:\n"
+        scenes = self.stats.get('scenes', Counter())
+        if isinstance(scenes, dict):
+            scenes = Counter(scenes)
+            
+        scene_map = {
+            'office': 'Escritório',
+            'home': 'Residência',
+            'outdoors': 'Ambiente Externo',
+            'unknown': 'Desconhecido'
+        }
+            
+        for scene, count in scenes.most_common():
+            raw_name = scene
+            scene_name = scene_map.get(raw_name, raw_name.replace("_", " ").title())
+            
+            total = sum(scenes.values())
+            percent = (count / total * 100) if total > 0 else 0
+            details += f"   - {scene_name}: {count} ({percent:.1f}%)\n"
         
         anomalies = self.stats.get('anomalies', Counter())
         if isinstance(anomalies, dict):
             anomalies = Counter(anomalies)
         
+        anomaly_map = {
+            'unusual_activity': 'Atividade Atípica',
+            'scene_inconsistency': 'Inconsistência com o Ambiente',
+            'prolonged_inactivity': 'Inatividade Prolongada',
+            'sudden_movement': 'Movimento Brusco',
+            'abnormal_pose': 'Postura Anormal',
+            'unauthorized_object': 'Objeto Não Autorizado',
+            'emotion_spike': 'Pico Emocional',
+            'crowd_anomaly': 'Aglomeração Anômala',
+            'visual_overlay': 'Sobreposição Visual',
+            'sudden_object_appear': 'Aparição Súbita de Objeto',
+            'silhouette_anomaly': 'Anomalia de Silhueta'
+        }
+        
         total_anomalies = sum(anomalies.values())
         details += f"\n[!] ANOMALIAS: {total_anomalies}\n"
         for anomaly, count in anomalies.most_common():
-            details += f"   - {anomaly}: {count}\n"
+            anomaly_name = anomaly_map.get(anomaly, anomaly)
+            total_anom = sum(anomalies.values())
+            percent = (count / total_anom * 100) if total_anom > 0 else 0
+            details += f"   - {anomaly_name}: {count} ({percent:.1f}%)\n"
         
         text.setText(details)
         layout.addWidget(text)

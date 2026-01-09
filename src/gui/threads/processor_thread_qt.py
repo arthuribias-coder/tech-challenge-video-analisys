@@ -7,17 +7,22 @@ from pathlib import Path
 import time
 import cv2
 import numpy as np
+import logging
 from collections import Counter
 
 from ...face_detector import FaceDetector, FaceDetection
 from ...emotion_analyzer import EmotionAnalyzer
 from ...activity_detector import ActivityDetector
 from ...anomaly_detector import AnomalyDetector
+from ...scene_classifier import SceneClassifier, SceneContext
 from ...visualizer import draw_detections, put_text
 from ...config import (
     ENABLE_OBJECT_DETECTION, 
-    should_use_gpu, get_device
+    should_use_gpu, get_device, is_gpu_available,
+    DEBUG_LOGGING, DEBUG_LOG_INTERVAL
 )
+
+logger = logging.getLogger(__name__)
 
 # Novos detectores para anomalias avançadas
 try:
@@ -25,19 +30,14 @@ try:
     OBJECT_DETECTOR_AVAILABLE = True
 except ImportError:
     OBJECT_DETECTOR_AVAILABLE = False
-    print("[INFO] ObjectDetector não disponível")
-
-# OverlayDetector e SegmentValidator foram removidos (fora de escopo/over-engineering)
-OVERLAY_DETECTOR_AVAILABLE = False
-SEGMENT_VALIDATOR_AVAILABLE = False
-SCENE_CLASSIFIER_AVAILABLE = False
+    logger.info("ObjectDetector não disponível")
 
 try:
     from ...oriented_detector import OrientedDetector
     ORIENTED_DETECTOR_AVAILABLE = True
 except ImportError as e:
     ORIENTED_DETECTOR_AVAILABLE = False
-    print(f"[INFO] OrientedDetector não disponível: {e}")
+    logger.info(f"OrientedDetector não disponível: {e}")
 
 
 class ProcessorThreadQt(QThread):
@@ -52,9 +52,6 @@ class ProcessorThreadQt(QThread):
     def __init__(self, video_path, output_path, frame_skip=2, target_fps=30, 
                  enable_preview=True, preview_fps=10,
                  enable_object_detection=None,
-                 # Args legados mantidos para compatibilidade, mas ignorados
-                 enable_overlay_detection=None,
-                 enable_segment_validation=None,
                  use_gpu=None,
                  model_size=None
                  ):
@@ -70,12 +67,11 @@ class ProcessorThreadQt(QThread):
         self.use_gpu = use_gpu
         self.model_size = model_size
         
+        # Log control
+        self.debug_mode = DEBUG_LOGGING
+        
         # Configuração simplificada
         self.enable_object_detection = enable_object_detection if enable_object_detection is not None else ENABLE_OBJECT_DETECTION
-        
-        # Features removidas
-        self.enable_overlay_detection = False
-        self.enable_segment_validation = False
         
         self.is_paused = False
         self.should_stop = False
@@ -83,16 +79,42 @@ class ProcessorThreadQt(QThread):
         # Controle de preview
         self._last_preview_time = 0
         self._preview_interval = 1.0 / preview_fps if preview_fps > 0 else 0.1
+
+    def _get_configured_device(self) -> str:
+        """Determina o device baseado na configuração use_gpu."""
+        if self.use_gpu == "true":
+            # Força GPU
+            if is_gpu_available():
+                return "cuda"
+            else:
+                logger.warning("GPU solicitada mas não disponível. Usando CPU.")
+                return "cpu"
+        elif self.use_gpu == "false":
+            # Força CPU
+            return "cpu"
+        else:
+            # Auto: usa GPU se disponível
+            return "cuda" if is_gpu_available() else "cpu"
+
+    def set_debug_mode(self, enabled: bool):
+        """Atualiza modo de debug em tempo de execução."""
+        self.debug_mode = enabled
+        # Propaga para outros módulos se necessário
+        # Nota: modules como scene_classifier usam DEBUG_LOGGING global, 
+        # que não muda em runtime facilmente sem reload,
+        # mas podemos definir em config se quisermos persistência global
+        from ... import config
+        config.DEBUG_LOGGING = enabled
     
     def run(self):
         """Executa processamento."""
         try:
             start_time = time.time()
             
-            # Log de configuração
-            device = get_device()
+            # Determina device baseado nas configurações
+            device = self._get_configured_device()
             model_size = self.model_size if self.model_size else "n"
-            print(f"[INFO] Inicializando componentes (device: {device}, model_size: {model_size})...")
+            logger.info(f"Inicializando componentes (device: {device}, model_size: {model_size})...")
             
             # Inicializa componentes principais
             face_detector = FaceDetector()
@@ -105,33 +127,33 @@ class ProcessorThreadQt(QThread):
             
             # Inicializa componentes opcionais
             object_detector = None
-            overlay_detector = None # Removido
-            segment_validator = None # Removido
             
             if self.enable_object_detection:
                 try:
                     object_detector = ObjectDetector(model_size=model_size, min_confidence=0.5)
-                    print("[INFO] ObjectDetector habilitado")
+                    logger.info("ObjectDetector habilitado")
                 except Exception as e:
-                    print(f"[WARN] ObjectDetector falhou: {e}")
+                    logger.warning(f"ObjectDetector falhou: {e}")
                     self.enable_object_detection = False
-            
-            # Overlay e Validator removidos
-            overlay_detector = None
-            segment_validator = None
             
             # Inicializa compontentes novos (Scene + OBB)
             scene_classifier = None
             oriented_detector = None
+
+            try:
+                scene_classifier = SceneClassifier(model_size=model_size)
+                logger.info("SceneClassifier habilitado")
+            except Exception as e:
+                logger.warning(f"SceneClassifier falhou: {e}")
             
             if ORIENTED_DETECTOR_AVAILABLE:
                 try:
                     oriented_detector = OrientedDetector(model_size=model_size)
-                    print("[INFO] OrientedDetector habilitado")
+                    logger.info("OrientedDetector habilitado")
                 except Exception as e:
-                    print(f"[WARN] OrientedDetector falhou: {e}")
+                    logger.warning(f"OrientedDetector falhou: {e}")
             
-            print(f"[INFO] Abrindo vídeo: {self.video_path}")
+            logger.info(f"Abrindo vídeo: {self.video_path}")
             
             # Abre vídeo
             cap = cv2.VideoCapture(str(self.video_path))
@@ -146,9 +168,9 @@ class ProcessorThreadQt(QThread):
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            print(f"[INFO] Vídeo: {width}x{height} @ {fps}fps, {total_frames} frames")
-            print(f"[INFO] Configurações: frame_skip={self.frame_skip}, target_fps={self.target_fps}")
-            print(f"[INFO] Preview: {'habilitado' if self.enable_preview else 'desabilitado'} @ {self.preview_fps} FPS")
+            logger.info(f"Vídeo: {width}x{height} @ {fps}fps, {total_frames} frames")
+            logger.info(f"Configurações: frame_skip={self.frame_skip}, target_fps={self.target_fps}")
+            logger.info(f"Preview: {'habilitado' if self.enable_preview else 'desabilitado'} @ {self.preview_fps} FPS")
             
             # Writer (usa target_fps configurado)
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -165,9 +187,8 @@ class ProcessorThreadQt(QThread):
                 'emotions': Counter(),
                 'activities': Counter(),
                 'anomalies': Counter(),
-                'objects': Counter(),  # Novo: contagem de objetos
-                'overlays': 0,  # Novo: contagem de overlays
-                # 'scenes': Counter()  # Novo: contagem de tipos de cena
+                'objects': Counter(),
+                'scenes': Counter()  # Novo: contagem de tipos de cena
             }
             
             frame_idx = 0
@@ -176,10 +197,8 @@ class ProcessorThreadQt(QThread):
             
             # Variáveis para detectores opcionais
             objects = []
-            overlays = []
-            segment_results = []
             
-            print("[INFO] Iniciando processamento...")
+            logger.info("Iniciando processamento...")
             
             # Cache para persistir detecções entre frames (para bbox fluído)
             last_faces = []
@@ -187,6 +206,7 @@ class ProcessorThreadQt(QThread):
             last_activities = []
             last_anomalies = []
             last_objects = []
+            last_scene_ctx = None
             
             while cap.isOpened() and not self.should_stop:
                 # Pausa
@@ -209,9 +229,8 @@ class ProcessorThreadQt(QThread):
                 emotions = last_emotions
                 activities = last_activities
                 anomalies = last_anomalies
+                scene_ctx = last_scene_ctx
                 objects = []
-                overlays = []
-                segment_results = []
                 
                 if frame_idx % self.frame_skip == 0:
                     # Reseta para novo processamento
@@ -221,16 +240,21 @@ class ProcessorThreadQt(QThread):
                     anomalies = []
                     
                     try:
-                        # 0. Contexto de Cena (YOLO-cls) - REMOVIDO
-                        scene_ctx = None
-                        # if scene_classifier:
-                        #     # Atualiza a cada 30 frames para otimização
-                        #     force = (frame_idx % 30 == 0)
-                        #     scene_ctx = scene_classifier.classify(frame, force_update=force)
-                            
-                        #     # Atualiza estatísticas de cena
-                        #     if scene_ctx:
-                        #         stats['scenes'][scene_ctx.scene_type] += 1
+                        # 0. Contexto de Cena (YOLO-cls)
+                        if scene_classifier:
+                            # Atualiza a cada 30 frames para otimização
+                            force = (frame_idx % 30 == 0)
+                            try:
+                                scene_ctx = scene_classifier.classify(frame, force_update=force)
+                                if scene_ctx:
+                                    last_scene_ctx = scene_ctx
+                                    stats['scenes'][scene_ctx.scene_type] += 1
+                                    
+                                    # Debug ocasional
+                                    if force and self.debug_mode:
+                                        logger.debug(f"Cena: {scene_ctx.scene_type} ({scene_ctx.confidence:.2f})")
+                            except Exception as e:
+                                logger.error(f"Erro na classificação de cena: {e}")
                             
                         # 0.5 Orientação (YOLO-obb)
                         obb_results = []
@@ -239,6 +263,10 @@ class ProcessorThreadQt(QThread):
 
                         # 1. Detecta ATIVIDADES primeiro (passando OBB para refinar lying vs standing)
                         activities = activity_detector.detect(frame, oriented_detections=obb_results)
+                        
+                        if self.debug_mode and activities and (frame_idx % DEBUG_LOG_INTERVAL == 0):
+                            logger.debug(f"Atividades ({len(activities)}): {[a.activity_pt for a in activities]}")
+
                         for activity in activities:
                             activity_name = activity.activity_pt if hasattr(activity, 'activity_pt') else str(activity)
                             stats['activities'][activity_name] = stats['activities'].get(activity_name, 0) + 1
@@ -323,7 +351,10 @@ class ProcessorThreadQt(QThread):
                             x, y, w, h = face.bbox
                             
                             # EmotionAnalyzer.analyze() precisa de frame completo, bbox e face_id
-                            emotion = emotion_analyzer.analyze(frame, face.bbox, face.face_id)
+                            # Passamos o contexto da cena atual para calibrar pesos emocionais
+                            current_scene = last_scene_ctx.scene_type if last_scene_ctx else "unknown"
+                            emotion = emotion_analyzer.analyze(frame, face.bbox, face.face_id, scene_context=current_scene)
+                            
                             emotions.append(emotion)
                             if emotion:
                                 emotion_name = emotion.emotion_pt if hasattr(emotion, 'emotion_pt') else str(emotion)
@@ -338,23 +369,7 @@ class ProcessorThreadQt(QThread):
                                 for obj in objects:
                                     stats['objects'][obj.class_name] = stats['objects'].get(obj.class_name, 0) + 1
                             except Exception as e:
-                                print(f"[WARN] ObjectDetector erro: {e}")
-                        
-                        # Detecta overlays/texto (a cada 10 frames para performance)
-                        if overlay_detector and frame_idx % 10 == 0:
-                            try:
-                                overlays = overlay_detector.detect(frame, frame_idx)
-                                stats['overlays'] += len(overlays)
-                            except Exception as e:
-                                print(f"[WARN] OverlayDetector erro: {e}")
-                        
-                        # Valida segmentação (a cada 5 frames para performance)
-                        if segment_validator and frame_idx % 5 == 0:
-                            try:
-                                validations = segment_validator.validate(frame, activities, frame_idx)
-                                segment_results = segment_validator.get_anomaly_results(validations)
-                            except Exception as e:
-                                print(f"[WARN] SegmentValidator erro: {e}")
+                                logger.warning(f"ObjectDetector erro: {e}")
                         
                         # Detecta anomalias usando o método estendido
                         anomalies = anomaly_detector.update_extended(
@@ -363,9 +378,12 @@ class ProcessorThreadQt(QThread):
                             emotions, 
                             activities,
                             object_detections=objects if objects else None,
-                            overlay_detections=overlays if overlays else None,
-                            segment_results=segment_results if segment_results else None
+                            overlay_detections=None,
+                            segment_results=None
                         )
+
+                        if self.debug_mode and anomalies and (frame_idx % DEBUG_LOG_INTERVAL == 0):
+                            logger.debug(f"Anomalias ({len(anomalies)}): {[a.anomaly_type.value for a in anomalies]}")
                         
                         # Validação Contextual de Cena (Extra)
                         if scene_ctx and objects and anomaly_detector.enable_object_anomalies:
@@ -397,7 +415,7 @@ class ProcessorThreadQt(QThread):
                         last_objects = objects
                     
                     except Exception as e:
-                        print(f"[WARN] Erro ao processar frame {frame_idx}: {e}")
+                        logger.warning(f"Erro ao processar frame {frame_idx}: {e}")
                         import traceback
                         traceback.print_exc()
                 else:
@@ -420,7 +438,7 @@ class ProcessorThreadQt(QThread):
                         'activities_count': len(activities) if frame_idx % self.frame_skip == 0 else 0,
                         'anomalies_count': len(anomalies) if frame_idx % self.frame_skip == 0 else 0,
                         'objects_count': len(objects) if objects else 0,
-                        'overlays_count': len(overlays) if overlays else 0
+                        'overlays_count': 0
                     }
                     
                     self.frame_processed.emit(frame_idx, preview_frame, metadata)
@@ -442,11 +460,11 @@ class ProcessorThreadQt(QThread):
             
             elapsed_time = time.time() - start_time
             
-            print(f"[INFO] Processamento concluído em {elapsed_time:.1f}s")
-            print(f"[INFO] Total de faces: {stats['faces']}")
-            print(f"[INFO] Total de objetos: {sum(stats['objects'].values())}")
-            print(f"[INFO] Total de anomalias: {sum(stats['anomalies'].values())}")
-            print(f"[INFO] Vídeo salvo: {self.output_path}")
+            logger.info(f"Processamento concluído em {elapsed_time:.1f}s")
+            logger.info(f"Total de faces: {stats['faces']}")
+            logger.info(f"Total de objetos: {sum(stats['objects'].values())}")
+            logger.info(f"Total de anomalias: {sum(stats['anomalies'].values())}")
+            logger.info(f"Vídeo salvo: {self.output_path}")
             
             if not self.should_stop:
                 self.finished_signal.emit(stats, elapsed_time)
@@ -454,7 +472,7 @@ class ProcessorThreadQt(QThread):
         except Exception as e:
             import traceback
             error_msg = f"Erro no processamento: {str(e)}\n{traceback.format_exc()}"
-            print(f"[ERROR] {error_msg}")
+            logger.error(error_msg)
             self.error.emit(error_msg)
     
     def toggle_pause(self):

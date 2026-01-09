@@ -310,8 +310,8 @@ class VideoPlayerQt(QWidget):
         self.seek_slider.setEnabled(True)  # Habilitado para mostrar progresso
         
         # Mostra overlay
-        self.status_overlay.setText("PREVIEW TEMPO REAL")
-        self.status_overlay.show()
+        # self.status_overlay.setText("PREVIEW TEMPO REAL")
+        # self.status_overlay.show()
         
         # Inicia timer de preview
         interval = int(1000 / preview_fps)
@@ -354,13 +354,9 @@ class VideoPlayerQt(QWidget):
         # Atualiza time label
         self._update_time_label()
         
-        # Atualiza overlay
-        buffer_size = len(self.preview_buffer)
-        self.status_overlay.setText(
-            f"PREVIEW TEMPO REAL\n"
-            f"Frame: {frame_idx}\n"
-            f"Buffer: {buffer_size}/30"
-        )
+        # Overlay removido a pedido do usuario (info vai para status bar na main window)
+        # buffer_size = len(self.preview_buffer)
+        # self.status_overlay.setText(...) 
     
     def switch_to_playback_mode(self):
         """Muda para modo de reprodução após processamento."""

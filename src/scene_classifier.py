@@ -7,12 +7,15 @@ Isso permite validação contextual de objetos e atividades.
 import cv2
 import numpy as np
 import torch
+import logging
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field
 import time
 
 from ultralytics import YOLO
-from .config import get_device, SCENE_CONTEXT_RULES
+from .config import get_device, SCENE_CONTEXT_RULES, DEBUG_LOGGING
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class SceneContext:
@@ -38,7 +41,7 @@ class SceneClassifier:
         
         # Carrega modelo
         model_path = f"yolo11{model_size}-cls.pt"
-        print(f"[INFO] Carregando SceneClassifier: {model_path} ({self.device})")
+        logger.info(f"Carregando SceneClassifier: {model_path} ({self.device})")
         self.model = YOLO(model_path)
         
         # Cache de contexto (para não rodar a cada frame, pois cena não muda rápido)
@@ -86,8 +89,8 @@ class SceneClassifier:
             conf = float(r.probs.data[i])
             top_probs.append((name, conf))
             
-        print(f"[DEBUG] Cena top5: {top_probs}") # Debug para o usuário ajustar config
-            
+        if DEBUG_LOGGING:
+                logger.debug(f"Cena top5: {top_probs}")
         # Mapeia para categoria de cena (heurstica simples baseada em keywords)
         scene_type = "unknown"
         is_indoor = False # Default
