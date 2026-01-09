@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from collections import deque
 from enum import Enum
 
-from .config import ACTIVITY_CATEGORIES, get_device, YOLO_MODEL_SIZE
+from .config import (ACTIVITY_CATEGORIES, get_device, YOLO_MODEL_SIZE,
+                       ACTIVITY_POSE_THRESHOLDS)
 
 
 class ActivityType(Enum):
@@ -194,29 +195,80 @@ class ActivityDetector:
                 p1 = detections[i]
                 p2 = detections[j]
                 
-                # Se ambos têm pulso direito detectado
-                if p1.keypoints.right_wrist and p2.keypoints.right_wrist:
-                    rw1 = p1.keypoints.right_wrist
-                    rw2 = p2.keypoints.right_wrist
+                # IMPORTANTE: Não reclassifica se uma das pessoas está deitada
+                # (médico tocando paciente NÃO é cumprimento)
+                if p1.activity == ActivityType.LYING or p2.activity == ActivityType.LYING:
+                    continue
+                
+                # Precisa que AMBOS tenham pulso direito E ambos estejam de pé ou similar
+                if not (p1.keypoints.right_wrist and p2.keypoints.right_wrist):
+                    continue
+                
+                # Verifica se ambas as pessoas estão em postura vertical (não deitadas)
+                p1_standing = self._is_person_upright(p1.keypoints)
+                p2_standing = self._is_person_upright(p2.keypoints)
+                
+                if not (p1_standing and p2_standing):
+                    continue
+                
+                rw1 = p1.keypoints.right_wrist
+                rw2 = p2.keypoints.right_wrist
+                
+                # Distância entre pulsos
+                wrist_dist = np.sqrt((rw1[0] - rw2[0])**2 + (rw1[1] - rw2[1])**2)
+                
+                # Se pulsos estão muito próximos (< 60px)
+                if wrist_dist >= 60:
+                    continue
+                
+                # Verifica também a distância dos ombros para garantir que são pessoas diferentes
+                s1 = p1.keypoints.right_shoulder or p1.keypoints.left_shoulder
+                s2 = p2.keypoints.right_shoulder or p2.keypoints.left_shoulder
+                
+                if not (s1 and s2):
+                    continue
+                
+                shoulder_dist = np.sqrt((s1[0] - s2[0])**2 + (s1[1] - s2[1])**2)
+                
+                # Pulsos muito próximos (<60px) mas corpos separados (>150px)
+                # E pulsos devem estar aproximadamente na mesma ALTURA (variação < 50px)
+                wrist_height_diff = abs(rw1[1] - rw2[1])
+                
+                if wrist_dist < 60 and shoulder_dist > 150 and wrist_height_diff < 50:
+                    # Verifica se os pulsos estão entre os dois corpos (região central)
+                    # Isso evita detectar toques laterais como cumprimento
+                    mid_x = (s1[0] + s2[0]) / 2
+                    wrist_mid_x = (rw1[0] + rw2[0]) / 2
                     
-                    # Distância entre pulsos
-                    dist = np.sqrt((rw1[0] - rw2[0])**2 + (rw1[1] - rw2[1])**2)
-                    
-                    # Se pulsos estão muito próximos (< 50px) e pessoas próximas
-                    # Verifica também a distância dos ombros para garantir que são pessoas diferentes próximas
-                    s1 = p1.keypoints.right_shoulder or p1.keypoints.left_shoulder
-                    s2 = p2.keypoints.right_shoulder or p2.keypoints.left_shoulder
-                    
-                    if s1 and s2:
-                        shoulder_dist = np.sqrt((s1[0] - s2[0])**2 + (s1[1] - s2[1])**2)
-                        
-                        # Pulsos unidos (<100px) mas corpos separados (>100px)
-                        if dist < 100 and shoulder_dist > 100:
-                            # Classifica ambos como cumprimento
-                            p1.activity = ActivityType.GREETING
-                            p1.activity_pt = ACTIVITY_CATEGORIES.get("greeting", "Cumprimentando")
-                            p2.activity = ActivityType.GREETING
-                            p2.activity_pt = ACTIVITY_CATEGORIES.get("greeting", "Cumprimentando")
+                    # Pulsos devem estar próximos do centro entre as duas pessoas
+                    if abs(wrist_mid_x - mid_x) < shoulder_dist * 0.3:
+                        # Classifica ambos como cumprimento
+                        p1.activity = ActivityType.GREETING
+                        p1.activity_pt = ACTIVITY_CATEGORIES.get("greeting", "Cumprimentando")
+                        p2.activity = ActivityType.GREETING
+                        p2.activity_pt = ACTIVITY_CATEGORIES.get("greeting", "Cumprimentando")
+                            
+        return detections
+    
+    def _is_person_upright(self, kp: PoseKeypoints) -> bool:
+        """Verifica se a pessoa está em postura vertical (não deitada)."""
+        if not (kp.left_shoulder and kp.right_shoulder):
+            return True  # Sem dados suficientes, assume vertical
+        
+        if not (kp.left_hip and kp.right_hip):
+            return True
+        
+        # Calcula orientação do torso
+        shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+        shoulder_x = (kp.left_shoulder[0] + kp.right_shoulder[0]) / 2
+        hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
+        hip_x = (kp.left_hip[0] + kp.right_hip[0]) / 2
+        
+        vertical_diff = abs(shoulder_y - hip_y)
+        horizontal_diff = abs(shoulder_x - hip_x)
+        
+        # Se corpo está mais vertical que horizontal = em pé
+        return vertical_diff > horizontal_diff
                             
         return detections
 
@@ -323,39 +375,82 @@ class ActivityDetector:
         # Calcula velocidade uma vez
         velocity = self._get_avg_velocity(person_id)
         
+        # === ORDEM DE PRIORIDADE ===
+        # 1. Deitado (posição horizontal clara)
+        # 2. Em movimento (correndo/caminhando) - se está se movendo, NÃO está sentado
+        # 3. Em pé (claramente ou frontal)
+        # 4. Agachado/Sentado (apenas se estático)
+        
         # 1. Verifica postura deitada primeiro (alta prioridade)
         if self._is_lying(keypoints):
             return ActivityType.LYING, 0.85
         
-        # 2. Posturas estáticas verificadas ANTES de gestos (prioridade)
-        # Sentado/Agachado são mais comuns que gestos específicos
+        # 2. MOVIMENTO tem prioridade sobre postura estática
+        # Se a pessoa está se movendo, NÃO pode estar sentada
+        running_threshold = ACTIVITY_POSE_THRESHOLDS["running_velocity_threshold"]
+        walking_threshold = ACTIVITY_POSE_THRESHOLDS["walking_velocity_threshold"]
+        
+        if velocity > running_threshold:
+            return ActivityType.RUNNING, 0.85
+        elif velocity > walking_threshold:
+            return ActivityType.WALKING, 0.8
+        
+        # 3. Verifica SENTADO primeiro (prioridade para pernas ocultas + parado)
+        # Isso captura pessoas em mesas de café/escritório
+        if self._is_sitting(keypoints, velocity):
+            return ActivityType.SITTING, 0.8
+        
+        # 4. Verifica se está EM PÉ (requer evidência de pernas)
+        # 4a. Claramente em pé (pernas visíveis, alinhamento vertical)
+        is_standing_clear = self._is_clearly_standing(keypoints)
+        # 4b. Em pé de frente (torso vertical + pernas parcialmente visíveis)
+        is_standing_frontal = self._is_frontal_standing(keypoints)
+        
+        if is_standing_clear or is_standing_frontal:
+            # Verifica gestos mesmo em pé
+            gesture_velocity = ACTIVITY_POSE_THRESHOLDS["gesture_velocity_threshold"]
+            if velocity > gesture_velocity:
+                if self._is_waving(keypoints):
+                    return ActivityType.WAVING, 0.8
+                if self._is_pointing(keypoints):
+                    return ActivityType.POINTING, 0.75
+            
+            # Braços levantados mesmo parado
+            if self._is_arms_raised(keypoints):
+                return ActivityType.ARMS_RAISED, 0.85
+            
+            # Confiança maior se ambos critérios concordam
+            conf = 0.85 if (is_standing_clear and is_standing_frontal) else 0.8
+            return ActivityType.STANDING, conf
+        
+        # 5. Agachado (postura específica)
         if self._is_crouching(keypoints):
             return ActivityType.CROUCHING, 0.75
         
-        if self._is_sitting(keypoints, velocity):
-            return ActivityType.SITTING, 0.75
-        
-        # 3. Verifica braços levantados (ambos acima da cabeça)
+        # 5. Verifica braços levantados (ambos acima da cabeça)
         if self._is_arms_raised(keypoints):
             return ActivityType.ARMS_RAISED, 0.85
         
-        # 4. Gestos específicos de mãos (MAS NÃO se está parado)
-        # Evita confundir selfie/braço estendido com waving
-        if velocity > 5:  # Só considera gestos se houver movimento mínimo
+        # 6. Gestos específicos de mãos (MAS NÃO se está parado)
+        gesture_velocity = ACTIVITY_POSE_THRESHOLDS["gesture_velocity_threshold"]
+        if velocity > gesture_velocity:
             if self._is_waving(keypoints):
                 return ActivityType.WAVING, 0.8
             
             if self._is_pointing(keypoints):
                 return ActivityType.POINTING, 0.75
         
-        # 5. Dança (movimento rítmico)
+        # 7. Dança (movimento rítmico)
         if self._is_dancing(person_id, keypoints):
             return ActivityType.DANCING, 0.8
         
-        # 6. Verifica movimento geral pela velocidade
-        if velocity > 80:
+        # 7. Verifica movimento geral pela velocidade
+        running_threshold = ACTIVITY_POSE_THRESHOLDS["running_velocity_threshold"]
+        walking_threshold = ACTIVITY_POSE_THRESHOLDS["walking_velocity_threshold"]
+        
+        if velocity > running_threshold:
             return ActivityType.RUNNING, 0.8
-        elif velocity > 25:
+        elif velocity > walking_threshold:
             return ActivityType.WALKING, 0.75
         else:
             return ActivityType.STANDING, 0.7
@@ -392,116 +487,291 @@ class ActivityDetector:
             if horizontal_diff > vertical_diff * 0.8:
                 return False
         
+        waving_hand_above_shoulder = ACTIVITY_POSE_THRESHOLDS["waving_hand_above_shoulder"]
+        waving_angle_min = ACTIVITY_POSE_THRESHOLDS["waving_elbow_angle_min"]
+        waving_angle_max = ACTIVITY_POSE_THRESHOLDS["waving_elbow_angle_max"]
+        
         for wrist, elbow, shoulder in [
             (kp.left_wrist, kp.left_elbow, kp.left_shoulder),
             (kp.right_wrist, kp.right_elbow, kp.right_shoulder)
         ]:
             if all([wrist, elbow, shoulder]):
-                # Mão SIGNIFICATIVAMENTE acima do ombro (critério mais rigoroso)
-                if wrist[1] < shoulder[1] - 40:
-                    # Aceita ângulo do cotovelo entre 40 e 160 graus
+                # Mão SIGNIFICATIVAMENTE acima do ombro (critério configurável)
+                if wrist[1] < shoulder[1] - waving_hand_above_shoulder:
+                    # Aceita ângulo do cotovelo dentro dos limiares
                     elbow_angle = self._calculate_angle(shoulder, elbow, wrist)
-                    if 40 < elbow_angle < 160:
+                    if waving_angle_min < elbow_angle < waving_angle_max:
                         return True
         return False
     
     def _is_pointing(self, kp: PoseKeypoints) -> bool:
         """Detecta gesto de apontar (braço estendido horizontalmente)."""
+        pointing_angle_min = ACTIVITY_POSE_THRESHOLDS["pointing_arm_angle_min"]
+        pointing_length = ACTIVITY_POSE_THRESHOLDS["pointing_horizontal_length"]
+        pointing_variance = ACTIVITY_POSE_THRESHOLDS["pointing_vertical_variance"]
+        
         for wrist, elbow, shoulder in [
             (kp.left_wrist, kp.left_elbow, kp.left_shoulder),
             (kp.right_wrist, kp.right_elbow, kp.right_shoulder)
         ]:
             if all([wrist, elbow, shoulder]):
-                # Braço estendido (ângulo > 150)
+                # Braço estendido (ângulo > threshold)
                 arm_angle = self._calculate_angle(shoulder, elbow, wrist)
-                if arm_angle > 150:
+                if arm_angle > pointing_angle_min:
                     # Horizontalmente (variação vertical pequena)
                     arm_height_diff = abs(wrist[1] - shoulder[1])
                     arm_length = abs(wrist[0] - shoulder[0])
-                    if arm_length > 80 and arm_height_diff < 60:
+                    if arm_length > pointing_length and arm_height_diff < pointing_variance:
                         return True
         return False
     
     def _is_sitting(self, kp: PoseKeypoints, velocity: float = 0.0) -> bool:
-        """Detecta postura sentada (análise melhorada de ângulos e oclusão)."""
+        """Detecta postura sentada.
         
-        # Se está muito parado (velocidade baixa), prioriza sitting sobre standing
-        # Cobre casos de selfie, trabalhando no computador, etc.
-        if velocity < 10:
-            # Verifica se tem torso visível (ombros + quadril)
-            if kp.left_shoulder and kp.right_shoulder:
-                # Caso 1: Tem quadril visível
-                if kp.left_hip or kp.right_hip:
-                    return True
-                # Caso 2: Não tem quadril (ocluído por mesa/câmera) MAS está parado
-                # Provavelmente sentado trabalhando/em videochamada
-                else:
-                    return True
+        Critérios para SENTADO:
+        1. Pernas NÃO visíveis (ocultas por mesa) + torso visível + parado
+        2. Quadril e joelhos na mesma altura (pernas dobradas)
+        3. NÃO está em pé com pernas visíveis
+        """
         
-        # 1. Fallback para "Sentado em mesa" (joelhos ocultos)
-        # Se não vemos joelhos, mas vemos tronco superior + estático
-        if not (kp.left_knee or kp.right_knee):
-             # Precisa ter ombros e quadril visíveis (torso)
-             if kp.left_shoulder and kp.right_shoulder and kp.left_hip and kp.right_hip:
-                 # Se estamos vendo quadril mas não joelhos, e a pessoa está parada 
-                 # (velocidade < 15), assumimos sentado (oclusão por mesa)
-                 if velocity < 15:
-                     return True
-             
-             # AJUSTE: Se nem sequer vemos o quadril (mesa alta/close-up), mas vemos ombros e rosto
-             # e está muito estático, provavelmente está sentado trabalhando/lendo.
-             # Evita classificar como "Standing" (padrão)
-             elif kp.left_shoulder and kp.right_shoulder:
-                 if velocity < 5: # Muito parado
-                     return True
-                     
-        # 2. Precisa de quadril e joelho para análise geométrica padrão
+        # REGRA 1: Se está em movimento significativo, NÃO está sentado
+        max_velocity = ACTIVITY_POSE_THRESHOLDS.get("sitting_max_velocity", 15)
+        if velocity > max_velocity:
+            return False
+        
+        # REGRA 2: Se está CLARAMENTE em pé (pernas VISÍVEIS abaixo), NÃO está sentado
+        # Isso exige ver joelhos/tornozelos bem abaixo do quadril
+        if self._is_clearly_standing(kp):
+            return False
+        
+        # REGRA 3: Pernas NÃO visíveis + torso visível + parado = SENTADO
+        # (típico de pessoa em mesa de café/escritório)
+        has_knees = kp.left_knee or kp.right_knee
+        has_ankles = kp.left_ankle or kp.right_ankle
+        has_torso = (kp.left_shoulder and kp.right_shoulder and 
+                     kp.left_hip and kp.right_hip)
+        
+        if has_torso and not has_knees and not has_ankles:
+            # Torso visível mas sem pernas = sentado em mesa
+            # (pessoa em pé teria pernas visíveis)
+            return True
+        
+        # REGRA 4: Análise geométrica quando temos joelhos visíveis
         if not all([kp.left_hip, kp.right_hip, kp.left_knee, kp.right_knee]):
             return False
         
         hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
         knee_y = (kp.left_knee[1] + kp.right_knee[1]) / 2
         
-        # Se joelhos estão aproximadamente na mesma altura que quadril = sentado
+        # Joelhos devem estar APROXIMADAMENTE na mesma altura que quadril
         hip_knee_diff = abs(hip_y - knee_y)
         
-        # Verifica também ângulo do tronco se tiver ombros
+        # Critério: quadril e joelhos próximos em Y (pessoa sentada dobra as pernas)
         if kp.left_shoulder and kp.right_shoulder:
             shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
             torso_length = abs(hip_y - shoulder_y)
             
-            # Se diferença quadril-joelho é menor que 40% do tronco = sentado
-            if hip_knee_diff < torso_length * 0.5:
-                return True
+            # Sentado: quadril-joelho < 50% do torso E joelhos NÃO estão muito abaixo
+            if hip_knee_diff < torso_length * ACTIVITY_POSE_THRESHOLDS["sitting_torso_factor"]:
+                # Confirma: joelhos não estão bem abaixo do quadril
+                if knee_y - hip_y < ACTIVITY_POSE_THRESHOLDS["standing_hip_knee_diff_min"]:
+                    return True
         
         # Fallback: diferença absoluta pequena
-        if hip_knee_diff < 80:
+        sitting_threshold = ACTIVITY_POSE_THRESHOLDS["sitting_knee_hip_diff_max"]
+        if hip_knee_diff < sitting_threshold:
+            # Mas apenas se joelhos não estão bem abaixo
+            if knee_y - hip_y < ACTIVITY_POSE_THRESHOLDS["standing_hip_knee_diff_min"]:
+                return True
+        
+        return False
+    
+    def _is_clearly_standing(self, kp: PoseKeypoints) -> bool:
+        """Verifica se a pessoa está claramente em pé (postura vertical completa)."""
+        # Precisa de pelo menos: ombros, quadril e (joelhos OU tornozelos)
+        if not (kp.left_shoulder and kp.right_shoulder):
+            return False
+        if not (kp.left_hip and kp.right_hip):
+            return False
+        
+        # Precisa de pelo menos joelhos OU tornozelos
+        has_knees = kp.left_knee and kp.right_knee
+        has_ankles = kp.left_ankle and kp.right_ankle
+        
+        if not (has_knees or has_ankles):
+            return False
+        
+        # Calcula centros
+        shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+        hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
+        
+        # Verifica alinhamento VERTICAL (ombros acima de quadril)
+        if shoulder_y >= hip_y:  # Em imagens, Y cresce para baixo
+            return False
+        
+        # Limiares configuráveis
+        hip_knee_min = ACTIVITY_POSE_THRESHOLDS["standing_hip_knee_diff_min"]
+        knee_ankle_min = ACTIVITY_POSE_THRESHOLDS["standing_knee_ankle_diff_min"]
+        hip_ankle_min = ACTIVITY_POSE_THRESHOLDS["standing_hip_ankle_diff_min"]
+        
+        # Se temos joelhos, verifica se estão ABAIXO do quadril
+        if has_knees:
+            knee_y = (kp.left_knee[1] + kp.right_knee[1]) / 2
+            hip_knee_diff = knee_y - hip_y  # Deve ser positivo (joelho abaixo)
+            
+            # Se joelho está bem abaixo do quadril = em pé
+            if hip_knee_diff > hip_knee_min:
+                # Verifica também se tornozelos estão abaixo dos joelhos
+                if has_ankles:
+                    ankle_y = (kp.left_ankle[1] + kp.right_ankle[1]) / 2
+                    knee_ankle_diff = ankle_y - knee_y  # Deve ser positivo
+                    
+                    # Tornozelos bem abaixo dos joelhos = definitivamente em pé
+                    if knee_ankle_diff > knee_ankle_min:
+                        return True
+                else:
+                    # Sem tornozelos visíveis, mas joelhos bem abaixo do quadril
+                    return True
+        
+        # Se temos apenas tornozelos (sem joelhos), verifica distância
+        elif has_ankles:
+            ankle_y = (kp.left_ankle[1] + kp.right_ankle[1]) / 2
+            hip_ankle_diff = ankle_y - hip_y  # Deve ser grande se está em pé
+            
+            # Grande distância quadril-tornozelo = em pé
+            if hip_ankle_diff > hip_ankle_min:
+                return True
+        
+        return False
+    
+    def _is_frontal_standing(self, kp: PoseKeypoints, bbox: Tuple[int, int, int, int] = None) -> bool:
+        """
+        Detecta pessoa em pé DE FRENTE para a câmera.
+        
+        IMPORTANTE: Torso vertical NÃO é suficiente!
+        Pessoa SENTADA também tem torso vertical.
+        
+        Para confirmar EM PÉ frontal, precisa:
+        - Torso vertical E
+        - Alguma evidência de pernas (joelhos OU tornozelos visíveis)
+        """
+        # Precisa de ombros e quadril
+        if not (kp.left_shoulder and kp.right_shoulder):
+            return False
+        if not (kp.left_hip and kp.right_hip):
+            return False
+        
+        # CRÍTICO: Precisa de ALGUMA evidência de pernas!
+        # Sem pernas visíveis, não podemos distinguir em pé de sentado
+        has_knees = kp.left_knee or kp.right_knee
+        has_ankles = kp.left_ankle or kp.right_ankle
+        
+        if not has_knees and not has_ankles:
+            # Sem pernas visíveis = NÃO podemos confirmar em pé
+            # (provavelmente sentado com pernas ocultas)
+            return False
+        
+        # Calcula centros
+        shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+        hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
+        
+        # Thresholds
+        shoulder_hip_min = ACTIVITY_POSE_THRESHOLDS.get("frontal_shoulder_hip_min", 40)
+        
+        # Torso vertical (ombros acima do quadril)
+        vertical_diff = hip_y - shoulder_y
+        if vertical_diff < shoulder_hip_min:
+            return False
+        
+        # Se temos joelhos, verificar se estão em posição de pé (abaixo do quadril)
+        if has_knees:
+            knee_y = 0
+            count = 0
+            if kp.left_knee:
+                knee_y += kp.left_knee[1]
+                count += 1
+            if kp.right_knee:
+                knee_y += kp.right_knee[1]
+                count += 1
+            knee_y /= count
+            
+            # Joelhos devem estar ABAIXO do quadril para pessoa em pé
+            # Se joelhos estão na mesma altura ou acima = sentado
+            knee_hip_diff = knee_y - hip_y
+            if knee_hip_diff < 20:  # Joelhos muito próximos do quadril = sentado
+                return False
+            
+            # Joelhos bem abaixo do quadril = em pé
             return True
+        
+        # Se temos tornozelos, verificar distância do quadril
+        if has_ankles:
+            ankle_y = 0
+            count = 0
+            if kp.left_ankle:
+                ankle_y += kp.left_ankle[1]
+                count += 1
+            if kp.right_ankle:
+                ankle_y += kp.right_ankle[1]
+                count += 1
+            ankle_y /= count
+            
+            # Tornozelos devem estar BEM abaixo do quadril
+            ankle_hip_diff = ankle_y - hip_y
+            if ankle_hip_diff > 80:  # Boa distância = em pé
+                return True
         
         return False
     
     def _is_crouching(self, kp: PoseKeypoints) -> bool:
-        """Detecta postura agachada (quadril baixo, joelhos dobrados)."""
+        """Detecta postura agachada (quadril muito baixo, joelhos dobrados, corpo comprimido)."""
         if not all([kp.left_hip, kp.right_hip, kp.left_knee, kp.right_knee]):
             return False
         
         hip_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
         knee_y = (kp.left_knee[1] + kp.right_knee[1]) / 2
         
-        # Tornozelos disponíveis para melhor análise
+        # IMPORTANTE: Agachado requer verificação mais rigorosa
+        # Uma pessoa sentada também pode ter quadril e joelho próximos!
+        # A diferença é que AGACHADO tem tornozelos visíveis abaixo dos joelhos
+        
+        # Tornozelos disponíveis para confirmação (critério principal)
         if kp.left_ankle and kp.right_ankle:
             ankle_y = (kp.left_ankle[1] + kp.right_ankle[1]) / 2
             
-            # Agachado: quadril próximo aos joelhos, joelhos acima dos tornozelos
-            if hip_y > knee_y - 30 and knee_y < ankle_y:
-                return True
+            # Agachado: quadril muito próximo aos joelhos (< threshold) E
+            # joelhos CLARAMENTE acima dos tornozelos
+            hip_knee_diff = abs(hip_y - knee_y)
+            knee_ankle_diff = abs(ankle_y - knee_y)
+            
+            # Critério: quadril próximo joelho (corpo comprimido) E joelho acima tornozelo
+            if (hip_knee_diff < ACTIVITY_POSE_THRESHOLDS["crouching_hip_knee_diff"] and
+                knee_ankle_diff > ACTIVITY_POSE_THRESHOLDS["crouching_ankle_margin"]):
+                # Verificação adicional: se temos ombros, confirma que corpo está comprimido
+                if kp.left_shoulder and kp.right_shoulder:
+                    shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+                    shoulder_hip_diff = abs(shoulder_y - hip_y)
+                    
+                    # Agachado: ombro-quadril é pequeno (corpo muito comprimido)
+                    # Sentado: ombro-quadril é grande (torso esticado)
+                    if shoulder_hip_diff < 150:  # Corpo comprimido
+                        return True
+                else:
+                    # Sem ombros visíveis, usa apenas análise de pernas
+                    return True
         
         return False
     
     def _is_lying(self, kp: PoseKeypoints) -> bool:
         """
         Detecta postura deitada com critérios rigorosos.
-        Requer múltiplas evidências para evitar falsos positivos.
+        
+        Usa múltiplas evidências para evitar falsos positivos:
+        1. Orientação horizontal do torso (ombros-quadril)
+        2. Orientação da cabeça (olhos/nariz alinhados horizontalmente)
+        3. Corpo inteiro horizontal (quando tornozelos visíveis)
+        
+        IMPORTANTE: Pessoa acenando/dançando com braços levantados NÃO é deitada.
         """
         # Precisa de ombros E quadril para análise confiável
         if not (kp.left_shoulder and kp.right_shoulder):
@@ -509,7 +779,14 @@ class ActivityDetector:
         if not (kp.left_hip and kp.right_hip):
             return False
         
-        # Calcula centros
+        # === VERIFICAÇÃO DE FACE (novo critério) ===
+        # Se a face está VERTICAL (olhos acima do nariz), pessoa NÃO está deitada
+        face_is_vertical = self._is_face_vertical(kp)
+        if face_is_vertical:
+            # Face claramente vertical = pessoa em pé ou sentada, não deitada
+            return False
+        
+        # Calcula centros do torso
         shoulder_center_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
         shoulder_center_x = (kp.left_shoulder[0] + kp.right_shoulder[0]) / 2
         hip_center_y = (kp.left_hip[1] + kp.right_hip[1]) / 2
@@ -522,31 +799,97 @@ class ActivityDetector:
         # Distância entre ombros (largura visível do corpo)
         shoulder_width = abs(kp.left_shoulder[0] - kp.right_shoulder[0])
         
-        # CRITÉRIO PRINCIPAL: Corpo claramente mais horizontal que vertical
-        # Exige que horizontal seja pelo menos 2x maior que vertical
+        # === CRITÉRIO PRINCIPAL ===
+        # Torso claramente horizontal: horizontal > 2x vertical E distância significativa
         if horizontal_diff > vertical_diff * 2.0 and horizontal_diff > 100:
-            return True
-        
-        # CRITÉRIO SECUNDÁRIO: Pessoa de lado (ombros muito próximos em X)
-        # Mas APENAS se o torso também está horizontal
-        if shoulder_width < 40:
-            # Verifica se quadril também está alinhado horizontalmente
-            hip_width = abs(kp.left_hip[0] - kp.right_hip[0])
-            if hip_width < 40 and horizontal_diff > vertical_diff * 1.5:
+            # Confirma com face horizontal (se disponível)
+            face_is_horizontal = self._is_face_horizontal(kp)
+            if face_is_horizontal:
+                return True
+            # Se não temos dados de face, aceita apenas se torso é MUITO horizontal
+            if horizontal_diff > vertical_diff * 3.0:
                 return True
         
-        # CRITÉRIO COM TORNOZELOS: Verificação completa do corpo
+        # === CRITÉRIO SECUNDÁRIO: Pessoa de lado ===
+        # Ombros muito próximos em X (visto de lado) + torso horizontal
+        if shoulder_width < 40:
+            hip_width = abs(kp.left_hip[0] - kp.right_hip[0])
+            if hip_width < 40 and horizontal_diff > vertical_diff * 1.5:
+                # Pessoa de lado: precisa confirmar com face ou torso muito horizontal
+                face_is_horizontal = self._is_face_horizontal(kp)
+                if face_is_horizontal or horizontal_diff > vertical_diff * 2.5:
+                    return True
+        
+        # === CRITÉRIO COM TORNOZELOS ===
+        # Verificação completa do corpo quando temos tornozelos
         if kp.left_ankle and kp.right_ankle:
             ankle_center_y = (kp.left_ankle[1] + kp.right_ankle[1]) / 2
             ankle_center_x = (kp.left_ankle[0] + kp.right_ankle[0]) / 2
             
-            # Distância total ombro->tornozelo
             total_vertical = abs(shoulder_center_y - ankle_center_y)
             total_horizontal = abs(shoulder_center_x - ankle_center_x)
             
-            # Corpo inteiro claramente horizontal (2x mais largo que alto)
+            # Corpo inteiro horizontal (2x mais largo que alto + distância mínima)
             if total_horizontal > total_vertical * 2.0 and total_horizontal > 150:
                 return True
+        
+        return False
+    
+    def _is_face_vertical(self, kp: PoseKeypoints) -> bool:
+        """
+        Verifica se a face está em orientação VERTICAL (pessoa em pé/sentada).
+        
+        Critérios:
+        - Olhos na mesma altura (variação Y pequena)
+        - Nariz abaixo dos olhos
+        - Boca/queixo abaixo do nariz (se disponível)
+        """
+        # Verifica olhos
+        if kp.left_eye and kp.right_eye:
+            eye_y_diff = abs(kp.left_eye[1] - kp.right_eye[1])
+            eye_x_diff = abs(kp.left_eye[0] - kp.right_eye[0])
+            
+            # Olhos na mesma altura (variação Y < 20px) e separados horizontalmente
+            if eye_y_diff < 20 and eye_x_diff > 15:
+                # Verifica nariz abaixo dos olhos
+                if kp.nose:
+                    avg_eye_y = (kp.left_eye[1] + kp.right_eye[1]) / 2
+                    # Nariz deve estar ABAIXO dos olhos (Y maior)
+                    if kp.nose[1] > avg_eye_y + 5:
+                        return True
+        
+        # Fallback: apenas nariz e ombros
+        if kp.nose and kp.left_shoulder and kp.right_shoulder:
+            shoulder_y = (kp.left_shoulder[1] + kp.right_shoulder[1]) / 2
+            # Nariz significativamente ACIMA dos ombros = face vertical
+            if kp.nose[1] < shoulder_y - 30:
+                return True
+        
+        return False
+    
+    def _is_face_horizontal(self, kp: PoseKeypoints) -> bool:
+        """
+        Verifica se a face está em orientação HORIZONTAL (pessoa deitada).
+        
+        Critérios:
+        - Olhos em alturas diferentes (um acima do outro)
+        - Ou nariz na mesma altura que olhos
+        """
+        if kp.left_eye and kp.right_eye:
+            eye_y_diff = abs(kp.left_eye[1] - kp.right_eye[1])
+            eye_x_diff = abs(kp.left_eye[0] - kp.right_eye[0])
+            
+            # Olhos em alturas DIFERENTES (Y > 20px) ou muito próximos em X
+            if eye_y_diff > 25 or eye_x_diff < 10:
+                return True
+            
+            # Olhos + nariz na mesma altura (face horizontal)
+            if kp.nose:
+                avg_eye_y = (kp.left_eye[1] + kp.right_eye[1]) / 2
+                nose_eye_diff = abs(kp.nose[1] - avg_eye_y)
+                # Nariz na mesma altura que olhos = face horizontal
+                if nose_eye_diff < 15:
+                    return True
         
         return False
     
@@ -555,8 +898,10 @@ class ActivityDetector:
         if not all([kp.left_wrist, kp.right_wrist, kp.nose]):
             return False
         
-        # Ambos pulsos acima do nariz
-        if kp.left_wrist[1] < kp.nose[1] and kp.right_wrist[1] < kp.nose[1]:
+        # Ambos pulsos acima do nariz (usa limiar configurável)
+        arm_above_head_threshold = ACTIVITY_POSE_THRESHOLDS["arms_raised_hand_above_head"]
+        if (kp.left_wrist[1] < kp.nose[1] - arm_above_head_threshold and 
+            kp.right_wrist[1] < kp.nose[1] - arm_above_head_threshold):
             return True
         
         return False

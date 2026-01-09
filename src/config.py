@@ -80,6 +80,58 @@ ENABLE_OBJECT_DETECTION = True
 # Tamanho dos modelos YOLO ('n'=nano, 's'=small, 'm'=medium, 'l'=large)
 YOLO_MODEL_SIZE = "n"
 
+# ===== LIMIARES DE DETECÇÃO DE ATIVIDADES =====
+# Estes valores controlam como as poses são classificadas
+ACTIVITY_POSE_THRESHOLDS = {
+    # Em Pé (Standing) - verificações de postura vertical
+    "standing_hip_knee_diff_min": 50,     # Diferença mínima Y entre quadril e joelho para em pé (px)
+    "standing_knee_ankle_diff_min": 30,   # Diferença mínima Y entre joelho e tornozelo (px)
+    "standing_hip_ankle_diff_min": 100,   # Diferença mínima Y quadril-tornozelo (px)
+    
+    # Sentado vs Agachado
+    "sitting_knee_hip_diff_max": 80,      # Máxima diferença Y entre quadril e joelho (px)
+    "sitting_torso_factor": 0.5,          # Fator para comparar diferença com comprimento do torso
+    "crouching_hip_knee_diff": 30,        # Máxima diferença Y entre quadril e joelho para agachado (px)
+    "crouching_ankle_margin": 10,         # Margem entre joelho e tornozelo para agachado (px)
+    
+    # Deitado
+    "lying_horizontal_ratio": 2.0,        # Razão horizontal/vertical para considerar deitado
+    "lying_min_horizontal_dist": 100,     # Distância horizontal mínima (px)
+    "lying_min_total_horizontal": 150,    # Distância horizontal total ombro-tornozelo
+    "lying_shoulder_width_threshold": 40, # Largura dos ombros (pessoa de lado)
+    "lying_hip_width_threshold": 40,      # Largura do quadril (pessoa de lado)
+    
+    # Braços Levantados
+    "arms_raised_hand_above_head": 80,    # Mão deve estar acima da cabeça por este valor (px)
+    
+    # Acenando/Waving
+    "waving_hand_above_shoulder": 40,     # Mão deve estar acima do ombro por este valor (px)
+    "waving_elbow_angle_min": 40,         # Ângulo mínimo do cotovelo
+    "waving_elbow_angle_max": 160,        # Ângulo máximo do cotovelo
+    
+    # Apontando
+    "pointing_arm_angle_min": 150,        # Ângulo mínimo do braço estendido
+    "pointing_horizontal_length": 80,     # Comprimento mínimo horizontal
+    "pointing_vertical_variance": 60,     # Variação máxima vertical
+    
+    # Movimento
+    "running_velocity_threshold": 80,     # Velocidade mínima para correr (px/frame)
+    "walking_velocity_threshold": 25,     # Velocidade mínima para caminhar (px/frame)
+    "gesture_velocity_threshold": 5,      # Velocidade mínima para considerar gestos
+    "sitting_max_velocity": 15,           # Velocidade MÁXIMA para considerar sentado (px/frame)
+    
+    # Em Pé Frontal (pessoa de frente para câmera)
+    "frontal_shoulder_hip_min": 40,       # Distância Y mínima ombro-quadril (px) para postura vertical
+    "frontal_torso_vertical_ratio": 1.5,  # Torso deve ser mais vertical que horizontal (ratio)
+    "frontal_head_above_shoulders": 20,   # Cabeça deve estar acima dos ombros (px)
+    "frontal_bbox_aspect_ratio": 1.2,     # BBox mais alto que largo indica pessoa em pé
+    
+    # Cumprimento/Greeting - detecção de aperto de mão
+    "greeting_wrist_distance_max": 60,    # Distância máxima entre pulsos (px)
+    "greeting_shoulder_distance_min": 150, # Distância mínima entre ombros (px)
+    "greeting_wrist_height_diff_max": 50, # Variação máxima de altura entre pulsos (px)
+}
+
 # OpenAI (opcional para geração de resumo)
 OPENAI_API_KEY = None
 OPENAI_MODEL = "gpt-4o-mini"

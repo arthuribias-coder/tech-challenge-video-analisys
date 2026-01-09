@@ -147,37 +147,45 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(5)
         main_layout.setContentsMargins(5, 5, 5, 5)
         
-        # Splitter principal vertical (top/bottom)
-        main_splitter = QSplitter(Qt.Orientation.Vertical)
+        # Splitter horizontal principal (video à esquerda / painel direito)
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # Top: Splitter horizontal (video / stats)
-        top_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # Video Player
+        # Esquerda: Video Player
         self.video_player = VideoPlayerQt()
-        self.video_player.setMinimumWidth(400)
-        top_splitter.addWidget(self.video_player)
+        self.video_player.setMinimumWidth(500)
+        main_splitter.addWidget(self.video_player)
         
-        # Stats Panel (agora ocupa todo o lado direito)
+        # Direita: Painel com Stats + Charts (em scroll area)
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setSpacing(10)
+        right_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Stats Panel
         self.stats_panel = StatsPanelQt()
-        self.stats_panel.setMinimumWidth(350)
         self.stats_panel.setMinimumHeight(300)
-        top_splitter.addWidget(self.stats_panel)
+        right_layout.addWidget(self.stats_panel)
         
-        # Define proporções iniciais do splitter horizontal
-        top_splitter.setStretchFactor(0, 6)  # Video
-        top_splitter.setStretchFactor(1, 4)  # Stats
-        
-        main_splitter.addWidget(top_splitter)
-        
-        # Bottom: Charts Panel
+        # Charts Panel (abaixo das estatísticas)
         self.charts_panel = ChartsPanelQt()
-        self.charts_panel.setMinimumHeight(200)
-        main_splitter.addWidget(self.charts_panel)
+        self.charts_panel.setMinimumHeight(350)
+        right_layout.addWidget(self.charts_panel)
         
-        # Define proporções iniciais do splitter vertical
-        main_splitter.setStretchFactor(0, 6)  # Top
-        main_splitter.setStretchFactor(1, 4)  # Charts
+        # Adiciona espaçador para empurrar conteúdo para cima
+        right_layout.addStretch()
+        
+        # Scroll area para o painel direito
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(right_panel)
+        scroll_area.setMinimumWidth(350)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        main_splitter.addWidget(scroll_area)
+        
+        # Define proporções iniciais do splitter
+        main_splitter.setStretchFactor(0, 6)  # Video (60%)
+        main_splitter.setStretchFactor(1, 4)  # Stats + Charts (40%)
         
         main_layout.addWidget(main_splitter)
     

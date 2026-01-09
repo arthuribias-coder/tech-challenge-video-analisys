@@ -2,7 +2,7 @@
 Player de vídeo com PyQt6 usando OpenCV
 """
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSlider
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton, QSlider, QComboBox, QSpinBox
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 import cv2
@@ -33,6 +33,8 @@ class VideoPlayerQt(QWidget):
         self.total_frames = 0
         self.fps = 30
         self.is_playing = False
+        self.playback_speed = 1.0  # Velocidade de reprodução (1.0 = normal)
+        self.is_seeking = False    # Flag para detectar se está fazendo seek
         
         # Preview mode
         self.mode = PlayerMode.IDLE
@@ -97,7 +99,7 @@ class VideoPlayerQt(QWidget):
         self.seek_slider.setMinimum(0)
         self.seek_slider.setMaximum(100)
         self.seek_slider.setValue(0)
-        self.seek_slider.sliderMoved.connect(self._seek)
+        self.seek_slider.sliderMoved.connect(self._on_slider_moved)
         self.seek_slider.setEnabled(False)
         controls_layout.addWidget(self.seek_slider, stretch=1)
         
@@ -106,6 +108,18 @@ class VideoPlayerQt(QWidget):
         self.time_label.setMinimumWidth(120)
         self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         controls_layout.addWidget(self.time_label)
+        
+        # Controle de Velocidade
+        speed_label = QLabel("Velocidade:")
+        controls_layout.addWidget(speed_label)
+        
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItems(["0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"])
+        self.speed_combo.setCurrentText("1.0x")
+        self.speed_combo.currentIndexChanged.connect(self._on_speed_changed)
+        self.speed_combo.setEnabled(False)
+        self.speed_combo.setMaximumWidth(80)
+        controls_layout.addWidget(self.speed_combo)
         
         layout.addLayout(controls_layout)
     
@@ -131,6 +145,7 @@ class VideoPlayerQt(QWidget):
         # Atualiza controles
         self.play_btn.setEnabled(True)
         self.seek_slider.setEnabled(True)
+        self.speed_combo.setEnabled(True)
         self.seek_slider.setMaximum(self.total_frames - 1)
         
         # Exibe primeiro frame
@@ -153,8 +168,8 @@ class VideoPlayerQt(QWidget):
         self.is_playing = True
         self.play_btn.setText("Pausar")
         
-        # Calcula intervalo do timer (ms)
-        interval = int(1000 / self.fps) if self.fps > 0 else 33
+        # Calcula intervalo do timer considerando a velocidade
+        interval = int(1000 / (self.fps * self.playback_speed)) if self.fps > 0 else 33
         self.timer.start(interval)
     
     def pause(self):
@@ -171,6 +186,22 @@ class VideoPlayerQt(QWidget):
             self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
             self._update_frame()
     
+    def _on_slider_moved(self, position):
+        """Callback quando o slider é movido manualmente (pausa automática)."""
+        # Define flag para indicar que estamos fazendo seek
+        self.is_seeking = True
+        
+        # Pausa reprodução automaticamente
+        was_playing = self.is_playing
+        if self.is_playing:
+            self.pause()
+        
+        # Realiza o seek
+        self._seek(position)
+        
+        # Reset flag
+        self.is_seeking = False
+    
     def _seek(self, position):
         """Pula para posição."""
         if not self.video_capture:
@@ -179,6 +210,19 @@ class VideoPlayerQt(QWidget):
         self.current_frame_idx = position
         self.video_capture.set(cv2.CAP_PROP_POS_FRAMES, position)
         self._update_frame()
+    
+    def _on_speed_changed(self, index):
+        """Callback quando a velocidade é alterada."""
+        speed_text = self.speed_combo.currentText()
+        # Extrai o valor numérico (ex: "1.5x" -> 1.5)
+        speed_value = float(speed_text.replace("x", ""))
+        self.playback_speed = speed_value
+        
+        # Se está reproduzindo, reinicia o timer com novo intervalo
+        if self.is_playing:
+            self.timer.stop()
+            interval = int(1000 / (self.fps * self.playback_speed)) if self.fps > 0 else 33
+            self.timer.start(interval)
     
     def _update_frame(self):
         """Atualiza frame."""
