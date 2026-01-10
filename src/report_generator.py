@@ -93,6 +93,9 @@ class ReportGenerator:
         else:
             summary = self._generate_template_summary(analysis_result)
         
+        # Gera seção de metodologia
+        methodology = self._generate_methodology_section()
+        
         # Monta relatório completo
         report = f"""
 {header}
@@ -108,8 +111,11 @@ class ReportGenerator:
 
 {anomalies_section}
 
+{methodology}
+
 ---
-*Relatório gerado automaticamente em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*
+**Tech Challenge - Fase 4: Análise de Vídeo com IA**  
+*Relatório gerado automaticamente em {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')}*
 """
         
         # Salva se caminho fornecido
@@ -135,12 +141,27 @@ class ReportGenerator:
         """Gera seção de estatísticas."""
         return f"""## Estatísticas Gerais
 
+### Análise do Vídeo
+
 | Métrica | Valor |
 |---------|-------|
-| Total de Frames Analisados | {result.total_frames} |
+| **Total de Frames Analisados** | {result.total_frames} |
 | Rostos Detectados (total) | {result.total_faces_detected} |
 | Pessoas Únicas Identificadas | {result.unique_faces} |
-| Anomalias Detectadas | {result.total_anomalies} |
+| **Número de Anomalias Detectadas** | {result.total_anomalies} |
+| FPS (Frames por Segundo) | {result.fps:.1f} |
+| Duração Total | {result.duration_seconds:.1f}s |
+| Tempo de Processamento | {result.processing_time_seconds:.1f}s |
+
+### Observação Importante
+
+> **Critério de Anomalia**: Movimento anômalo não segue o padrão geral de atividades observadas no vídeo.
+> 
+> A aplicação classifica como anômalo comportamentos que se desviam significativamente do padrão estabelecido,
+> como gestos bruscos, mudanças súbitas de postura, inatividade prolongada, emoções negativas intensas,
+> ou comportamentos atípicos para o contexto da cena detectado.
+> 
+> Movimentos normais e esperados (caminhando, sentado, conversando) não são considerados anômalos.
 """
     
     def _generate_emotions_section(self, result: VideoAnalysisResult) -> str:
@@ -159,18 +180,26 @@ class ReportGenerator:
             key=lambda x: -x[1]
         )
         
-        table = "| Emoção | Frequência |\n|--------|------------|\n"
+        # Calcula total para percentuais
+        total_emotions = sum(count for _, count in sorted_emotions)
+        
+        table = "| Emoção | Frequência | Percentual |\n|--------|------------|------------|\n"
         for emotion, count in sorted_emotions:
-            table += f"| {emotion} | {count} |\n"
+            percentage = (count / total_emotions * 100) if total_emotions > 0 else 0
+            bar = "█" * int(percentage / 5)  # Barra visual
+            table += f"| {emotion} | {count} | {percentage:.1f}% {bar} |\n"
         
         # Emoção dominante
         dominant = sorted_emotions[0][0] if sorted_emotions else "N/A"
+        dominant_pct = (sorted_emotions[0][1] / total_emotions * 100) if sorted_emotions and total_emotions > 0 else 0
         
         return f"""## Análise de Emoções
 
-**Emoção Predominante**: {dominant}
+**Emoção Predominante**: {dominant} ({dominant_pct:.1f}% das detecções)
 
 {table}
+
+*Total de detecções emocionais: {total_emotions}*
 """
     
     def _generate_activities_section(self, result: VideoAnalysisResult) -> str:
@@ -183,31 +212,92 @@ class ReportGenerator:
             key=lambda x: -x[1]
         )
         
-        table = "| Atividade | Frequência |\n|-----------|------------|\n"
+        # Calcula total para percentuais
+        total_activities = sum(count for _, count in sorted_activities)
+        
+        table = "| Atividade | Frequência | Percentual |\n|-----------|------------|------------|\n"
         for activity, count in sorted_activities:
             activity_pt = ACTIVITY_CATEGORIES.get(activity, activity)
-            table += f"| {activity_pt} | {count} |\n"
+            percentage = (count / total_activities * 100) if total_activities > 0 else 0
+            bar = "█" * int(percentage / 5)  # Barra visual
+            table += f"| {activity_pt} | {count} | {percentage:.1f}% {bar} |\n"
+        
+        # Atividade dominante
+        dominant = ACTIVITY_CATEGORIES.get(sorted_activities[0][0], sorted_activities[0][0]) if sorted_activities else "N/A"
+        dominant_pct = (sorted_activities[0][1] / total_activities * 100) if sorted_activities and total_activities > 0 else 0
         
         return f"""## Detecção de Atividades
 
+**Atividade Predominante**: {dominant} ({dominant_pct:.1f}% das detecções)
+
 {table}
+
+*Total de detecções de atividades: {total_activities}*
+"""
+    
+    def _generate_methodology_section(self) -> str:
+        """Gera seção de metodologia e tecnologias."""
+        return """## Metodologia e Tecnologias
+
+### Modelos Utilizados
+
+| Componente | Tecnologia | Propósito |
+|------------|-----------|----------|
+| Detecção de Atividades | YOLO11-pose | Identificação de pessoas e poses/atividades |
+| Análise de Emoções | DeepFace | Reconhecimento facial e classificação emocional |
+| Classificação de Cena | YOLO11-cls | Identificação do contexto/ambiente |
+| Detecção Orientada | YOLO11-obb | Detecção de pessoas deitadas vs em pé |
+| Detecção de Objetos | YOLO11 | Identificação de objetos no ambiente |
+
+### Processo de Análise
+
+1. **Pré-processamento**: Leitura e preparação dos frames do vídeo
+2. **Detecção Multi-modal**: Análise simultânea de faces, atividades, objetos e contexto de cena
+3. **Classificação Emocional**: Análise facial profunda para identificar estados emocionais
+4. **Detecção de Anomalias**: Motor de regras que combina dados comportamentais e visuais
+5. **Pós-processamento**: Geração de visualizações e relatórios
+
+### Critérios de Detecção de Anomalias
+
+- **Movimento Anômalo**: Gestos bruscos ou mudanças súbitas não condizentes com o padrão geral
+- **Emoções Negativas**: Picos de tristeza, raiva ou medo mantidos por período prolongado
+- **Inatividade Prolongada**: Ausência de movimento por tempo superior ao normal
+- **Contexto Visual**: Objetos ou posturas incompatíveis com o ambiente detectado
+- **Posturas Atípicas**: Pessoas deitadas em ambientes inadequados (escritórios, lojas, etc.)
 """
     
     def _generate_anomalies_section(self, result: VideoAnalysisResult) -> str:
         """Gera seção de anomalias."""
         if result.total_anomalies == 0:
-            return "## Anomalias Detectadas\n\n*Nenhuma anomalia detectada durante a análise.*"
+            return """## Anomalias Detectadas
+
+**Total**: Nenhuma anomalia detectada
+
+O vídeo não apresentou comportamentos ou padrões anômalos durante o período analisado.
+Todas as atividades e emoções detectadas estão dentro dos parâmetros normais esperados
+para o contexto da cena.
+"""
         
-        # Tabela por tipo
-        type_table = "| Tipo de Anomalia | Quantidade |\n|------------------|------------|\n"
-        for atype, count in result.anomalies_by_type.items():
+        # Tabela por tipo com percentuais
+        total_anomalies = sum(result.anomalies_by_type.values())
+        type_table = "| Tipo de Anomalia | Quantidade | Percentual |\n|------------------|------------|------------|\n"
+        
+        sorted_types = sorted(
+            result.anomalies_by_type.items(),
+            key=lambda x: -x[1]
+        )
+        
+        for atype, count in sorted_types:
             atype_pt = ANOMALY_LABELS.get(atype, atype)
-            type_table += f"| {atype_pt} | {count} |\n"
+            percentage = (count / total_anomalies * 100) if total_anomalies > 0 else 0
+            bar = "█" * int(percentage / 5)
+            type_table += f"| {atype_pt} | {count} | {percentage:.1f}% {bar} |\n"
         
         # Lista detalhada (limitada a 20 eventos)
         events_list = ""
         for i, event in enumerate(result.anomaly_events[:20], 1):
-            events_list += f"\n### {i}. {event['tipo'].replace('_', ' ').title()}\n"
+            tipo_pt = ANOMALY_LABELS.get(event['tipo'], event['tipo'])
+            events_list += f"\n### {i}. {tipo_pt}\n"
             events_list += f"- **Timestamp**: {event['timestamp']}\n"
             events_list += f"- **Frame**: {event['frame']}\n"
             events_list += f"- **Severidade**: {event['severidade']}\n"
@@ -215,18 +305,31 @@ class ReportGenerator:
         
         more_events = ""
         if len(result.anomaly_events) > 20:
-            more_events = f"\n*... e mais {len(result.anomaly_events) - 20} eventos.*"
+            more_events = f"\n*... e mais {len(result.anomaly_events) - 20} eventos não exibidos neste resumo.*"
         
         return f"""## Anomalias Detectadas
 
-**Total**: {result.total_anomalies} anomalias
+**Total**: {result.total_anomalies} anomalias comportamentais ou contextuais
 
 ### Distribuição por Tipo
 
 {type_table}
 
-### Detalhamento dos Eventos
+### Análise Detalhada
+
+As anomalias detectadas representam desvios do padrão normal de comportamento ou
+inconsistências contextuais. Estes eventos requerem atenção especial, pois podem indicar
+situações de risco, comportamentos suspeitos ou necessidade de intervenção.
+
+### Detalhamento dos Principais Eventos
 {events_list}{more_events}
+
+### Notas sobre Classificação de Anomalias
+
+- **Movimento Anômalo**: Gestos bruscos, quedas ou movimentos atípicos
+- **Emoção Negativa**: Manifestações de tristeza, raiva ou medo prolongadas
+- **Inatividade**: Períodos de imobilidade superiores ao esperado
+- **Contexto Suspeito**: Objetos ou comportamentos incompatíveis com o ambiente
 """
     
     def _generate_llm_summary(self, result: VideoAnalysisResult) -> str:

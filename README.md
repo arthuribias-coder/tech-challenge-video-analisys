@@ -255,6 +255,56 @@ TC-4/
     * **Gráficos**: Distribuição de emoções e atividades (abas na parte inferior).
 6. Ao final, o vídeo processado será salvo na pasta `output/` e um relatório de texto em `reports/`.
 
+## 📊 Relatório Automático
+
+Após o processamento, a aplicação gera automaticamente um **relatório detalhado** em formato Markdown (`.md`) na pasta `reports/`. O relatório inclui:
+
+### Conteúdo do Relatório
+
+1. **Resumo Executivo**: Visão geral da análise com principais insights
+2. **Estatísticas Gerais**:
+   * ✅ **Total de frames analisados**
+   * ✅ **Número de anomalias detectadas**
+   * Rostos e pessoas identificadas
+   * FPS e tempo de processamento
+3. **Análise de Emoções**: Distribuição detalhada com gráficos textuais e percentuais
+4. **Detecção de Atividades**: Frequência de cada atividade com percentuais
+5. **Anomalias Comportamentais**:
+   * Distribuição por tipo
+   * Detalhamento de cada evento (timestamp, frame, severidade, descrição)
+6. **Metodologia e Tecnologias**: Modelos utilizados e critérios de detecção
+7. **Observação Importante**:
+   * ⚠️ **Movimento anômalo não segue o padrão geral de atividades** (como gestos bruscos ou comportamentos atípicos)
+   * Esses são classificados como anômalos pela aplicação
+
+### Exemplo de Localização
+
+```plaintext
+reports/
+├── analise_video1_20260109_143022.md    # Relatório em Markdown
+└── analise_video1_20260109_143022.json  # Dados estruturados (JSON)
+```
+
+The relatório pode ser visualizado diretamente no GitHub ou em qualquer visualizador Markdown.
+
+## 🎥 Demonstração em Vídeo
+
+Para demonstração completa das funcionalidades implementadas, um vídeo de demonstração está disponível evidenciando:
+
+1. **Inicialização da Aplicação**: Interface gráfica PyQt6
+2. **Seleção e Configuração**: Escolha de vídeo e ajuste de parâmetros
+3. **Processamento em Tempo Real**:
+   * Preview do vídeo sendo processado
+   * Estatísticas atualizadas em tempo real
+   * Gráficos de emoções e atividades
+4. **Detecção de Atividades**: Pessoas andando, sentadas, acenando, etc.
+5. **Análise de Emoções**: Classificação facial em tempo real
+6. **Detecção de Anomalias**: Identificação de comportamentos atípicos
+7. **Contexto de Cena**: Classificação automática do ambiente
+8. **Relatório Final**: Visualização do relatório gerado
+
+**Link do Vídeo**: [Adicionar link do vídeo de demonstração aqui]
+
 ## ⚙️ Configuração Técnica (`src/config.py`)
 
 O arquivo `src/config.py` centraliza constantes importantes, como:
