@@ -8,6 +8,7 @@ import argparse
 import sys
 import shutil
 import cv2
+import logging
 from pathlib import Path
 
 # Adiciona diretório raiz ao path para imports
@@ -28,9 +29,17 @@ def main():
     
     args = parser.parse_args()
     
+    # Configura logging
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    
     video_path = Path(args.video)
     if not video_path.exists():
-        print(f"[ERRO] Arquivo não encontrado: {video_path}")
+        print(f"ERRO: Arquivo não encontrado: {video_path}")
         sys.exit(1)
         
     # Carrega configurações
@@ -45,9 +54,9 @@ def main():
                     custom_settings = json.load(f)
                     settings.update(custom_settings)
             except Exception as e:
-                print(f"[ERRO] Falha ao ler config: {e}")
+                print(f"ERRO: Falha ao ler config: {e}")
         else:
-            print(f"[AVISO] Config não encontrada: {config_path}")
+            print(f"AVISO: Config não encontrada: {config_path}")
             
     # Sobrescreve debug se flag passada
     if args.debug:

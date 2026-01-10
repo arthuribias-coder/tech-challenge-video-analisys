@@ -318,7 +318,7 @@ class StatsPanelQt(QWidget):
         }
         
         total_anomalies = sum(anomalies.values())
-        details += f"\n[!] ANOMALIAS: {total_anomalies}\n"
+        details += f"\nANOMALIAS: {total_anomalies}\n"
         for anomaly, count in anomalies.most_common():
             anomaly_name = anomaly_map.get(anomaly, anomaly)
             total_anom = sum(anomalies.values())

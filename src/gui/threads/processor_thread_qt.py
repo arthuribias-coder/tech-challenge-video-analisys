@@ -19,7 +19,7 @@ from ...visualizer import draw_detections, put_text
 from ...config import (
     ENABLE_OBJECT_DETECTION, 
     should_use_gpu, get_device, is_gpu_available,
-    DEBUG_LOGGING, DEBUG_LOG_INTERVAL
+    DEBUG_LOGGING, DEBUG_LOG_INTERVAL, DETECTION_PERSISTENCE_FRAMES
 )
 
 logger = logging.getLogger(__name__)
@@ -195,18 +195,18 @@ class ProcessorThreadQt(QThread):
             process_start = time.time()
             last_progress_update = 0
             
-            # Variáveis para detectores opcionais
-            objects = []
-            
             logger.info("Iniciando processamento...")
             
             # Cache para persistir detecções entre frames (para bbox fluído)
-            last_faces = []
-            last_emotions = []
-            last_activities = []
-            last_anomalies = []
-            last_objects = []
-            last_scene_ctx = None
+            # Estrutura: {tipo: (detecções, frame_último_update)}
+            detection_cache = {
+                'faces': ([], 0),
+                'emotions': ([], 0),
+                'activities': ([], 0),
+                'anomalies': ([], 0),
+                'objects': ([], 0),
+                'scene_ctx': (None, 0)
+            }
             
             while cap.isOpened() and not self.should_stop:
                 # Pausa
@@ -224,13 +224,21 @@ class ProcessorThreadQt(QThread):
                 # Processa frame
                 processed_frame = frame.copy()
                 
-                # Variáveis para este frame (inicia com cache para persistência)
-                faces = last_faces
-                emotions = last_emotions
-                activities = last_activities
-                anomalies = last_anomalies
-                scene_ctx = last_scene_ctx
-                objects = []
+                # Função auxiliar para obter detecções persistidas
+                def get_persisted_detection(cache_key):
+                    cached_data, last_frame = detection_cache[cache_key]
+                    # Retorna cache se ainda está dentro do período de persistência
+                    if (frame_idx - last_frame) <= DETECTION_PERSISTENCE_FRAMES:
+                        return cached_data
+                    return [] if cache_key != 'scene_ctx' else None
+                
+                # Inicializa com cache persistido
+                faces = get_persisted_detection('faces')
+                emotions = get_persisted_detection('emotions')
+                activities = get_persisted_detection('activities')
+                anomalies = get_persisted_detection('anomalies')
+                objects = get_persisted_detection('objects')
+                scene_ctx = get_persisted_detection('scene_ctx')
                 
                 if frame_idx % self.frame_skip == 0:
                     # Reseta para novo processamento
@@ -238,6 +246,7 @@ class ProcessorThreadQt(QThread):
                     emotions = []
                     activities = []
                     anomalies = []
+                    objects = []  # Reseta objetos apenas quando processa
                     
                     try:
                         # 0. Contexto de Cena (YOLO-cls)
@@ -366,6 +375,14 @@ class ProcessorThreadQt(QThread):
                         if object_detector:
                             try:
                                 objects = object_detector.detect(frame, frame_idx)
+                                
+                                if self.debug_mode and (frame_idx % DEBUG_LOG_INTERVAL == 0):
+                                    if objects:
+                                        obj_names = [f"{obj.class_name}({obj.confidence:.2f})" for obj in objects]
+                                        logger.debug(f"Objetos ({len(objects)}): {obj_names}")
+                                    else:
+                                        logger.debug(f"Nenhum objeto relevante detectado")
+                                
                                 for obj in objects:
                                     stats['objects'][obj.class_name] = stats['objects'].get(obj.class_name, 0) + 1
                             except Exception as e:
@@ -407,21 +424,22 @@ class ProcessorThreadQt(QThread):
                         #      # Usa put_text para suportar acentos UTF-8 (visualizer.py)
                         #      processed_frame = put_text(processed_frame, text, (10, 50), 24, (0, 255, 255))
                         
-                        # Atualiza cache para frames intermediários (persistência de bbox)
-                        last_faces = faces
-                        last_emotions = emotions
-                        last_activities = activities
-                        last_anomalies = anomalies
-                        last_objects = objects
+                        # Atualiza cache com timestamp para persistência temporal
+                        detection_cache['faces'] = (faces, frame_idx)
+                        detection_cache['emotions'] = (emotions, frame_idx)
+                        detection_cache['activities'] = (activities, frame_idx)
+                        detection_cache['anomalies'] = (anomalies, frame_idx)
+                        detection_cache['objects'] = (objects, frame_idx)
+                        detection_cache['scene_ctx'] = (scene_ctx, frame_idx)
                     
                     except Exception as e:
                         logger.warning(f"Erro ao processar frame {frame_idx}: {e}")
                         import traceback
                         traceback.print_exc()
                 else:
-                    # Frame intermediário: usa detecções cacheadas para manter bbox visível
-                    if last_faces or last_activities or last_anomalies or last_objects:
-                        processed_frame = draw_detections(frame, last_faces, last_emotions, last_activities, last_anomalies, objects=last_objects)
+                    # Frame intermediário: usa detecções persistidas
+                    if faces or activities or anomalies or objects:
+                        processed_frame = draw_detections(frame, faces, emotions, activities, anomalies, objects=objects)
                 
                 # Escreve frame
                 out.write(processed_frame)
@@ -434,9 +452,9 @@ class ProcessorThreadQt(QThread):
                     
                     # Metadata do frame
                     metadata = {
-                        'faces_count': len(faces) if frame_idx % self.frame_skip == 0 else 0,
-                        'activities_count': len(activities) if frame_idx % self.frame_skip == 0 else 0,
-                        'anomalies_count': len(anomalies) if frame_idx % self.frame_skip == 0 else 0,
+                        'faces_count': len(faces),
+                        'activities_count': len(activities),
+                        'anomalies_count': len(anomalies),
                         'objects_count': len(objects) if objects else 0,
                         'overlays_count': 0
                     }

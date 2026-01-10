@@ -15,12 +15,13 @@ from pathlib import Path
 import logging
 
 from .widgets import VideoPlayerQt, StatsPanelQt, ChartsPanelQt
+from .widgets.video_player_qt import PlayerMode
 # removed SettingsDialog import as we are moving settings to header
 from .widgets.error_dialog_qt import ErrorDialog
 from .threads import ProcessorThreadQt
 from .icon_provider import IconProvider
 from ..config import (
-    OUTPUT_DIR, FRAME_SKIP, TARGET_FPS, ENABLE_PREVIEW, PREVIEW_FPS,
+    OUTPUT_DIR, REPORTS_DIR, FRAME_SKIP, TARGET_FPS, ENABLE_PREVIEW, PREVIEW_FPS,
     ENABLE_OBJECT_DETECTION, VIDEO_PATH, USE_GPU, YOLO_MODEL_SIZE
 )
 
@@ -281,6 +282,12 @@ class MainWindow(QMainWindow):
         save_action.setToolTip("Salvar vídeo")
         save_action.triggered.connect(self._save_video)
         toolbar.addAction(save_action)
+        
+        # Botão Reset
+        reset_action = QAction(IconProvider.view_refresh(), "Reset", self)
+        reset_action.setToolTip("Limpar saídas e restaurar configurações padrão")
+        reset_action.triggered.connect(self._reset_application)
+        toolbar.addAction(reset_action)
 
         toolbar.addSeparator()
 
@@ -536,6 +543,134 @@ class MainWindow(QMainWindow):
             import shutil
             shutil.copy(self.output_path, filename)
             QMessageBox.information(self, "Sucesso", f"Vídeo salvo em:\n{filename}")
+    
+    def _reset_application(self):
+        """Reset completo: limpa saídas e restaura configurações padrão."""
+        # Verifica se há processamento em andamento
+        if self.processor_thread and self.processor_thread.isRunning():
+            QMessageBox.warning(
+                self, 
+                "Aviso", 
+                "Pare o processamento antes de fazer reset!"
+            )
+            return
+        
+        # Confirmação do usuário
+        reply = QMessageBox.question(
+            self,
+            "Confirmar Reset",
+            "Isso irá:\n"
+            "• Limpar todos os vídeos processados\n"
+            "• Limpar relatórios e logs\n"
+            "• Restaurar configurações para o padrão\n\n"
+            "Deseja continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.No:
+            return
+        
+        try:
+            import shutil
+            from ..config import OUTPUT_DIR, REPORTS_DIR
+            
+            # Limpa diretório de saída
+            if OUTPUT_DIR.exists():
+                for file in OUTPUT_DIR.glob("*"):
+                    if file.is_file():
+                        file.unlink()
+                    elif file.is_dir():
+                        shutil.rmtree(file)
+            
+            # Limpa diretório de relatórios
+            if REPORTS_DIR.exists():
+                for file in REPORTS_DIR.glob("*"):
+                    if file.is_file():
+                        file.unlink()
+            
+            # Limpa logs (se existir diretório de logs)
+            logs_dir = Path("logs")
+            if logs_dir.exists():
+                for file in logs_dir.glob("*.log"):
+                    file.unlink()
+            
+            # Restaura configurações padrão
+            self.processing_settings = {
+                'frame_skip': FRAME_SKIP,
+                'target_fps': TARGET_FPS,
+                'enable_preview': ENABLE_PREVIEW,
+                'preview_fps': PREVIEW_FPS,
+                'enable_object_detection': ENABLE_OBJECT_DETECTION,
+                'use_gpu': USE_GPU,
+                'model_size': YOLO_MODEL_SIZE
+            }
+            
+            # Atualiza UI com valores padrão
+            self.combo_preset.setCurrentIndex(1)  # Balanceado
+            
+            # Modelo
+            size_map = {"n": 0, "s": 1, "m": 2, "l": 3}
+            self.combo_model.setCurrentIndex(size_map.get(YOLO_MODEL_SIZE, 0))
+            
+            # Device
+            dev_map = {"auto": 0, "true": 1, "false": 2}
+            self.combo_device.setCurrentIndex(dev_map.get(USE_GPU, 0))
+            
+            # Checkboxes
+            self.chk_preview.setChecked(ENABLE_PREVIEW)
+            self.chk_obj.setChecked(ENABLE_OBJECT_DETECTION)
+            self.chk_debug.setChecked(False)
+            
+            # Limpa painéis
+            if hasattr(self.stats_panel, 'clear'):
+                self.stats_panel.clear()
+            self.charts_panel.clear_data()
+            
+            # Limpa player de vídeo
+            if self.video_player.video_capture is not None:
+                self.video_player.video_capture.release()
+                self.video_player.video_capture = None
+            self.video_player.current_frame = None
+            self.video_player.current_frame_idx = 0
+            self.video_player.total_frames = 0
+            self.video_player.is_playing = False
+            self.video_player.preview_buffer.clear()
+            self.video_player.mode = PlayerMode.IDLE
+            self.video_player.video_label.setText("Carregue um vídeo para começar")
+            self.video_player.seek_slider.setValue(0)
+            self.video_player.seek_slider.setMaximum(0)
+            self.video_player.play_btn.setEnabled(False)
+            self.video_player.seek_slider.setEnabled(False)
+            if self.video_player.timer.isActive():
+                self.video_player.timer.stop()
+            if self.video_player.preview_timer.isActive():
+                self.video_player.preview_timer.stop()
+            
+            # Reseta variáveis
+            self.output_path = None
+            if hasattr(self, 'last_stats'):
+                delattr(self, 'last_stats')
+            
+            # Atualiza status
+            self.status_label.setText("Reset completo realizado com sucesso")
+            self.progress_bar.setValue(0)
+            
+            QMessageBox.information(
+                self,
+                "Reset Completo",
+                "Aplicação resetada com sucesso!\n\n"
+                "• Saídas limpas\n"
+                "• Configurações restauradas\n"
+                "• Pronto para novo processamento"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Erro",
+                f"Erro ao fazer reset:\n{str(e)}"
+            )
     
     def _export_report(self):
         """Exporta relatório."""

@@ -54,7 +54,7 @@ class VideoPlayerQt(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         # Video display
-        self.video_label = QLabel("[○] Carregue um vídeo para começar")
+        self.video_label = QLabel("Carregue um vídeo para começar")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("""
             QLabel {

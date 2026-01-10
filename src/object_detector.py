@@ -132,18 +132,20 @@ class ObjectDetector:
         self, 
         model_size: str = None,
         min_confidence: float = 0.5,
-        classes_of_interest: Optional[Set[int]] = None
+        classes_of_interest: Optional[Set[int]] = None,
+        device: Optional[str] = None
     ):
         """
         Args:
             model_size: Tamanho do modelo ('n', 's', 'm', 'l', 'x'). None usa config.
             min_confidence: Confiança mínima para detecção (50% padrão)
             classes_of_interest: Classes COCO específicas para detectar (None = todas mapeadas)
+            device: Device para inferência ('cuda', 'cpu', None=auto)
         """
         self.min_confidence = min_confidence
         self.object_counter = 0
         self.tracked_objects: Dict[int, Tuple[int, int]] = {}  # object_id -> (cx, cy)
-        self.device = get_device()
+        self.device = device if device is not None else get_device()
         
         # Classes de interesse (default: todas mapeadas)
         self.classes_of_interest = classes_of_interest or set(COCO_CATEGORIES.keys())

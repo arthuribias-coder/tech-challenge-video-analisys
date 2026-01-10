@@ -81,6 +81,10 @@ ENABLE_PREVIEW = True
 PREVIEW_FPS = 10
 TARGET_FPS = 30
 
+# ===== PERSISTÊNCIA DE DETECÇÕES (BBOX) =====
+# Número de frames para manter detecções visíveis mesmo sem re-detecção
+DETECTION_PERSISTENCE_FRAMES = 5  # Mantém bbox por 5 frames (~0.16s a 30fps)
+
 # ===== CONFIGURAÇÕES DOS DETECTORES AVANÇADOS =====
 ENABLE_OBJECT_DETECTION = True
 
@@ -301,3 +305,33 @@ OBJECT_LABELS = {
     "stop sign": "Placa de Pare", "parking meter": "Parquímetro", "bench": "Banco",
     "potted plant": "Planta",
 }
+
+
+def load_settings() -> dict:
+    """Carrega configurações padrão ou de arquivo settings.json."""
+    import json
+    
+    # Configurações padrão
+    default_settings = {
+        'frame_skip': FRAME_SKIP,
+        'target_fps': TARGET_FPS,
+        'enable_preview': ENABLE_PREVIEW,
+        'preview_fps': PREVIEW_FPS,
+        'enable_object_detection': ENABLE_OBJECT_DETECTION,
+        'use_gpu': USE_GPU,
+        'model_size': YOLO_MODEL_SIZE,
+        'debug_logging': DEBUG_LOGGING
+    }
+    
+    # Tenta carregar settings.json se existir
+    settings_file = BASE_DIR / "settings.json"
+    if settings_file.exists():
+        try:
+            with open(settings_file, 'r') as f:
+                custom_settings = json.load(f)
+                default_settings.update(custom_settings)
+                logger.info(f"Configurações carregadas de {settings_file}")
+        except Exception as e:
+            logger.warning(f"Erro ao carregar settings.json: {e}")
+    
+    return default_settings

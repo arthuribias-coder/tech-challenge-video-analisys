@@ -8,10 +8,18 @@ Uso:
 """
 
 import sys
+import logging
 from pathlib import Path
 
 # Adiciona src ao path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Configura logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 from PyQt6.QtWidgets import QApplication
 from src.gui import MainWindow
